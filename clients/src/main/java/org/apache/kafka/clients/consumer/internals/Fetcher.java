@@ -467,7 +467,7 @@ public class Fetcher<K, V> implements SubscriptionState.Listener {
         while (recordsRemaining > 0) {
             if (nextInLineRecords == null || nextInLineRecords.isDrained()) {
                 CompletedFetch completedFetch = completedFetches.poll();
-                if (completedFetch == null)
+                if (completedFetch == null) //如果一条数据都没有，那么本轮就是没有数据
                     break;
 
                 nextInLineRecords = parseCompletedFetch(completedFetch);
