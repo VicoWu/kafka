@@ -91,6 +91,7 @@ public class ClientResponse {
         return latencyMs;
     }
 
+  //handler设置自己为对应的response，并且将自己添加到ConsumerNetworkClient.pendingCompletion中，下次调用poll,将会检查并统一进行回调
     public void onComplete() {
         if (callback != null)
             callback.onComplete(this);

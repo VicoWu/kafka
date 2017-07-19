@@ -668,6 +668,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     true);
             this.client = new ConsumerNetworkClient(netClient, metadata, time, retryBackoffMs,
                     config.getInt(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG));
+            //设置Offset重置策略，看@Code OffsetResetStrategy
             OffsetResetStrategy offsetResetStrategy = OffsetResetStrategy.valueOf(config.getString(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG).toUpperCase(Locale.ROOT));
             this.subscriptions = new SubscriptionState(offsetResetStrategy);
             List<PartitionAssignor> assignors = config.getConfiguredInstances(
@@ -919,6 +920,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      *
      * @param partitions The list of partitions to assign this consumer
      * @throws IllegalArgumentException If partitions is null or contains null or empty topics
+     * assign方法会指定SubscriptionState为SubscriptionState.USER_ASSIGNED，区别与
      */
     @Override
     public void assign(Collection<TopicPartition> partitions) {
@@ -1001,7 +1003,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     // NOTE: since the consumed position has already been updated, we must not allow
                     // wakeups or any other errors to be triggered prior to returning the fetched records.
                     if (fetcher.sendFetches() > 0) {
-                        client.pollNoWakeup();
+                        client.pollNoWakeup();//调用poll方法，并且这个过程不可以被中断
                     }
 
                     if (this.interceptors == null)

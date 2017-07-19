@@ -22,7 +22,10 @@ import java.util.Map;
 
 /**
  * The set of requests which have been sent or are being sent but haven't yet received a response
+ * InFlight的标准是是否收到了发送响应，而不是是否已经发送。
  */
+
+
 final class InFlightRequests {
 
     private final int maxInFlightRequestsPerConnection;
@@ -85,10 +88,13 @@ final class InFlightRequests {
      * @param node Node in question
      * @return true iff we have no requests still being sent to the given node
      */
+    //通过检查正在进行中的请求的数目确认是否还可以发送更多的请求
     public boolean canSendMore(String node) {
         Deque<NetworkClient.InFlightRequest> queue = requests.get(node);
         return queue == null || queue.isEmpty() ||
                (queue.peekFirst().send.completed() && queue.size() < this.maxInFlightRequestsPerConnection);
+        //第一条消息(通过add方法可以看到，每次添加消息是添加到队列头部，因此peekFirst获取的是最后添加进来的消息)已经发送出去并且消息的总大小没有超过
+        //单个连接的最大限制
     }
 
     /**

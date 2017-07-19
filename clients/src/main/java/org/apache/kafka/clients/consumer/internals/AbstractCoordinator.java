@@ -435,7 +435,7 @@ public abstract class AbstractCoordinator implements Closeable {
                                 joinResponse.memberId(), joinResponse.groupProtocol());
                         AbstractCoordinator.this.rejoinNeeded = false;
                         if (joinResponse.isLeader()) {
-                            onJoinLeader(joinResponse).chain(future);
+                            onJoinLeader(joinResponse).chain(future);//我是leader
                         } else {
                             onJoinFollower().chain(future);
                         }
@@ -482,10 +482,17 @@ public abstract class AbstractCoordinator implements Closeable {
         return sendSyncGroupRequest(requestBuilder);
     }
 
+    /**
+     * Consumer Group Leader收到response并且自己是leader 的时候会被调用，
+     * 查看@Code AbstractCoordinator.JoinGroupResponseHandler.handle()方法
+     * @param joinResponse
+     * @return
+     */
     private RequestFuture<ByteBuffer> onJoinLeader(JoinGroupResponse joinResponse) {
         try {
             // perform the leader synchronization and send back the assignment for the group
-            Map<String, ByteBuffer> groupAssignment = performAssignment(joinResponse.leaderId(), joinResponse.groupProtocol(),
+            //调用ConsumerCoordinator.performAssignment()
+        	Map<String, ByteBuffer> groupAssignment = performAssignment(joinResponse.leaderId(), joinResponse.groupProtocol(),
                     joinResponse.members());
 
             SyncGroupRequest.Builder requestBuilder =

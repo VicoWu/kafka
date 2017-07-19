@@ -12,6 +12,9 @@
  */
 package org.apache.kafka.clients.consumer;
 
-public enum OffsetResetStrategy {
-    LATEST, EARLIEST, NONE
+public enum OffsetResetStrategy { 
+    //消费消息的时候，如果发现oofset已经不存在，设置offset的策略
+    LATEST, //最近的消息的offset
+    EARLIEST,//最早的消息的offset
+    NONE//抛出异常
 }

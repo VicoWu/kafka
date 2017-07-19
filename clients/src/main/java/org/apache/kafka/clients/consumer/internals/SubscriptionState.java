@@ -47,28 +47,36 @@ import java.util.regex.Pattern;
  * This class also maintains a cache of the latest commit position for each of the assigned
  * partitions. This is updated through {@link #committed(TopicPartition, OffsetAndMetadata)} and can be used
  * to set the initial fetch position (e.g. {@link Fetcher#resetOffset(TopicPartition)}.
+ * 
+ * 每一个Consumer都维护了一个SubscriptionState对象
  */
 public class SubscriptionState {
     private static final String SUBSCRIPTION_EXCEPTION_MESSAGE =
             "Subscription to topics, partitions and pattern are mutually exclusive";
 
     private enum SubscriptionType {
-        NONE, AUTO_TOPICS, AUTO_PATTERN, USER_ASSIGNED
+        NONE, 
+        AUTO_TOPICS, //用户订阅指定topic
+        AUTO_PATTERN, //用户通过正则订阅指定的一些topic
+        USER_ASSIGNED //用户手动指定订阅某些Topic-Partition，这种情况下，不会进行rebalance操作
     }
 
     /* the type of subscription */
     private SubscriptionType subscriptionType;
 
     /* the pattern user has requested */
-    private Pattern subscribedPattern;
+    private Pattern subscribedPattern;//通过pattern模式订阅的时候，所有与该pattern match的topic都会被subscribe
 
     /* the list of topics the user has requested */
-    private Set<String> subscription;
+    private Set<String> subscription;//订阅的topic的名字，只有当订阅模式是AUTO_TOPICS和AUTO_PATTERN
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
+    //描述了这个group所有订阅的topic的集合。在一个consumer group中会有多个consumer，某一个consumer会被选举为leader,只有
+    //只有leader身份的ConsumerCoordinator会记录这个group中所有consumer的topic。注意，一个consumer group中不同的consumer可以订阅不同的topic
     private final Set<String> groupSubscription;
 
     /* the partitions that are currently assigned, note that the order of partition matters (see FetchBuilder for more details) */
+    //当前分配给自己的Topic-Partition，当一个consumer订阅了某些topic，这些topic中的某些partition会被分配给自己
     private final PartitionStates<TopicPartitionState> assignment;
 
     /* do we need to request the latest committed offsets from the coordinator? */
@@ -125,6 +133,7 @@ public class SubscriptionState {
         changeSubscription(topics);
     }
 
+    //无论是AUTO_TOPICS(subscribe(Set<String,ConsumerRebalanceListener>))还是AUTO_PATTERN(subscribeFromPattern()),最终都是调用该方法
     private void changeSubscription(Set<String> topicsToSubscribe) {
         if (!this.subscription.equals(topicsToSubscribe)) {
             this.subscription = topicsToSubscribe;
@@ -178,18 +187,19 @@ public class SubscriptionState {
      * note this is different from {@link #assignFromUser(Set)} which directly set the assignment from user inputs
      */
     public void assignFromSubscribed(Collection<TopicPartition> assignments) {
-        if (!this.partitionsAutoAssigned())
+        if (!this.partitionsAutoAssigned()) //只有SubscriptionType.AUTO_TOPICS或者SubscriptionType.AUTO_PATTERN支持assign
             throw new IllegalArgumentException("Attempt to dynamically assign partitions while manual assignment in use");
 
         Map<TopicPartition, TopicPartitionState> assignedPartitionStates = partitionToStateMap(assignments);
         fireOnAssignment(assignedPartitionStates.keySet());
 
-        if (this.subscribedPattern != null) {
+        //检查自己收到的assignment是否是所定于的topic，如果收到的assignment不是自己所订阅的，则属于异常情况，无法接受这种assignment
+        if (this.subscribedPattern != null) {//AUTO_PATTERN模式
             for (TopicPartition tp : assignments) {
                 if (!this.subscribedPattern.matcher(tp.topic()).matches())
                     throw new IllegalArgumentException("Assigned partition " + tp + " for non-subscribed topic regex pattern; subscription pattern is " + this.subscribedPattern);
             }
-        } else {
+        } else {//AUTO_TOPIC模式
             for (TopicPartition tp : assignments)
                 if (!this.subscription.contains(tp.topic()))
                     throw new IllegalArgumentException("Assigned partition " + tp + " for non-subscribed topic; subscription is " + this.subscription);

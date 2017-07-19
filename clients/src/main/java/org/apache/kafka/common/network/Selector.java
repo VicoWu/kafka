@@ -184,7 +184,9 @@ public class Selector implements Selectable {
             socketChannel.close();
             throw e;
         }
+        //在这个channelz注册到selector上，关注OP_CONNECT事件
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
+        //默认情况下是PlaintextChannelBuilder
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
         key.attach(channel);
         this.channels.put(id, channel);
@@ -193,7 +195,7 @@ public class Selector implements Selectable {
             // OP_CONNECT won't trigger for immediately connected channels
             log.debug("Immediately connected to node {}", channel.id());
             immediatelyConnectedKeys.add(key);
-            key.interestOps(0);
+            key.interestOps(0);//0代表对任何key都不感兴趣
         }
     }
 
@@ -236,6 +238,7 @@ public class Selector implements Selectable {
 
     /**
      * Queue the given request for sending in the subsequent {@link #poll(long)} calls
+     * 
      * @param send The request to send
      */
     public void send(Send send) {
@@ -243,9 +246,9 @@ public class Selector implements Selectable {
         if (closingChannels.containsKey(connectionId))
             this.failedSends.add(connectionId);
         else {
-            KafkaChannel channel = channelOrFail(connectionId, false);
+            KafkaChannel channel = channelOrFail(connectionId, false);//返回指向对应节点的一个Channel
             try {
-                channel.setSend(send);
+                channel.setSend(send);//将send对象放到KafkaChannel.send中去，并没有立刻发送
             } catch (CancelledKeyException e) {
                 this.failedSends.add(connectionId);
                 close(channel, false);
@@ -295,10 +298,11 @@ public class Selector implements Selectable {
 
         /* check ready keys */
         long startSelect = time.nanoseconds();
-        int readyKeys = select(timeout);
+        int readyKeys = select(timeout);//等待并选择至少一个key有被选择的channel
         long endSelect = time.nanoseconds();
         this.sensors.selectTime.record(endSelect - startSelect, time.milliseconds());
 
+        //如果存在已经准备好的keys
         if (readyKeys > 0 || !immediatelyConnectedKeys.isEmpty()) {
             pollSelectionKeys(this.nioSelector.selectedKeys(), false, endSelect);
             pollSelectionKeys(immediatelyConnectedKeys, true, endSelect);
@@ -347,19 +351,20 @@ public class Selector implements Selectable {
 
                 /* if channel is not ready finish prepare */
                 if (channel.isConnected() && !channel.ready())
-                    channel.prepare();
+                    channel.prepare();//如果已经建立连接但是还没有进行认证，则进行认证
 
                 /* if channel is ready read from any connections that have readable data */
                 if (channel.ready() && key.isReadable() && !hasStagedReceive(channel)) {
+                	//通过KafkaChannel.read()的代码可以看到，如果返回null，代表这个channel没有读完
                     NetworkReceive networkReceive;
                     while ((networkReceive = channel.read()) != null)
-                        addToStagedReceives(channel, networkReceive);
+                        addToStagedReceives(channel, networkReceive);//将channel和对应的收到的响应放入stagedReceives中，每一个channel对应一个List<networkReceive>
                 }
 
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
                 if (channel.ready() && key.isWritable()) {
                     Send send = channel.write();
-                    if (send != null) {
+                    if (send != null) {//send!=null代表发送完成
                         this.completedSends.add(send);
                         this.sensors.recordBytesSent(channel.id(), send.size());
                     }
@@ -840,6 +845,20 @@ public class Selector implements Selectable {
         public void remove(String connectionId) {
             lruConnections.remove(connectionId);
         }
+    }
+    
+    public static void main(String[] args){
+    	System.out.println(SelectionKey.OP_CONNECT);
+    	
+    	boolean isInterestedInAccept  = (0 & SelectionKey.OP_ACCEPT) == SelectionKey.OP_ACCEPT;
+
+    	System.out.println(~SelectionKey.OP_READ
+                | SelectionKey.OP_WRITE
+                | SelectionKey.OP_CONNECT);
+        System.out.println( (0 & ~(SelectionKey.OP_READ
+                | SelectionKey.OP_WRITE
+                | SelectionKey.OP_CONNECT)) != 0);
+
     }
 
 }

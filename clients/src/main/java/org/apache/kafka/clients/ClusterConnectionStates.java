@@ -40,6 +40,7 @@ final class ClusterConnectionStates {
         if (state == null)
             return true;
         else
+        	//CommonClientConfigs.RECONNECT_BACKOFF_MS_CONFIG配置了断线重连的最小等待时间，防止系统太过于容易重连带来系统大量的网络开销
             return state.state == ConnectionState.DISCONNECTED && now - state.lastConnectAttemptMs >= this.reconnectBackoffMs;
     }
 
@@ -89,6 +90,7 @@ final class ClusterConnectionStates {
      * Enter the connecting state for the given connection.
      * @param id the id of the connection
      * @param now the current time
+     * 在NetworkClient.initiateConnect()中初始化
      */
     public void connecting(String id, long now) {
         nodeState.put(id, new NodeConnectionState(ConnectionState.CONNECTING, now));
@@ -165,6 +167,7 @@ final class ClusterConnectionStates {
     
     /**
      * The state of our connection to a node.
+     * 在NetworkClient.initiateConnect()->ClusterConnectionStates.connecting()中初始化
      */
     private static class NodeConnectionState {
 
