@@ -58,6 +58,7 @@ public class ConsumerNetworkClient implements Closeable {
     private int wakeupDisabledCount = 0;
 
 
+  //在KafkaConsumer中实例化ConsumerNetworkClient，client的运行时类为NetworkClient
     public ConsumerNetworkClient(KafkaClient client,
                                  Metadata metadata,
                                  Time time,
@@ -108,6 +109,7 @@ public class ConsumerNetworkClient implements Closeable {
         RequestFutureCompletionHandler future = new RequestFutureCompletionHandler();
         RequestHeader header = client.nextRequestHeader(api);
         RequestSend send = new RequestSend(node.idString(), header, request.toStruct());
+      //创建send对象，放到unsent中
         put(node, new ClientRequest(now, true, send, future));
         return future;
     }
@@ -206,7 +208,7 @@ public class ConsumerNetworkClient implements Closeable {
      * nor will it execute any delayed tasks.
      */
     public void pollNoWakeup() {
-        disableWakeups();
+        disableWakeups();//不可以被中断
         try {
             poll(0, time.milliseconds(), false);
         } finally {
@@ -216,7 +218,7 @@ public class ConsumerNetworkClient implements Closeable {
 
     private void poll(long timeout, long now, boolean executeDelayedTasks) {
         // send all the requests we can send now
-        trySend(now);
+        trySend(now);//发送消息，其实只是将待发送消息进行设置，并不进行发送
 
         // ensure we don't poll any longer than the deadline for
         // the next scheduled task
@@ -227,6 +229,7 @@ public class ConsumerNetworkClient implements Closeable {
         // handle any disconnects by failing the active requests. note that disconnects must
         // be checked immediately following poll since any subsequent call to client.ready()
         // will reset the disconnect status
+        //检查disconnect状态，如果某个节点断开了连接，就清除这个节点的所有的in-flight request，并生成回调放到
         checkDisconnects(now);
 
         // execute scheduled tasks
@@ -238,6 +241,7 @@ public class ConsumerNetworkClient implements Closeable {
         trySend(now);
 
         // fail requests that couldn't be sent if they have expired
+      //检查已经过期的请求
         failExpiredRequests(now);
     }
 
@@ -284,6 +288,11 @@ public class ConsumerNetworkClient implements Closeable {
         return total + client.inFlightRequestCount();
     }
 
+    /**
+     * * 检查disconnect状态，如果某个节点断开了连接，就清除这个节点的所有的in-flight request，并生成回调handler放到pendingCompletion中
+    * 下次如果再次poll，这个回调就会被执行
+     * @param now
+     */
     private void checkDisconnects(long now) {
         // any disconnects affecting requests that have already been transmitted will be handled
         // by NetworkClient, so we just need to check whether connections for any of the unsent
@@ -300,6 +309,7 @@ public class ConsumerNetworkClient implements Closeable {
                 for (ClientRequest request : requestEntry.getValue()) {
                     RequestFutureCompletionHandler handler =
                             (RequestFutureCompletionHandler) request.callback();
+                  //节点连接断开，因此调用onComplete()回调，将这个handler自己放入到pendingCompletion中
                     handler.onComplete(new ClientResponse(request, now, true, null));
                 }
             }
@@ -358,10 +368,14 @@ public class ConsumerNetworkClient implements Closeable {
 
     private void clientPoll(long timeout, long now) {
         client.poll(timeout, now);
+      //如果没有任何其他线程想要环境当前的poll()方法所在线程，则这个方法不会有任何作用
+        //但是，如果存在这样企图环境当前线程的线程将wakeup标记为置为true，那么此时会抛出异常，该方法会立刻中断退出，后续方法
         maybeTriggerWakeup();
     }
 
     private void maybeTriggerWakeup() {
+    	//wakeup设置为true表示有除去consumer线程以外的线程希望停止poll，只有除去consumer之外的线程
+    	//会把wakeup置为true
         if (wakeupDisabledCount == 0 && wakeup.get()) {
             wakeup.set(false);
             throw new WakeupException();
@@ -412,9 +426,10 @@ public class ConsumerNetworkClient implements Closeable {
             extends RequestFuture<ClientResponse>
             implements RequestCompletionHandler {
 
+    	//执行完成请求之后的回调方法
         @Override
         public void onComplete(ClientResponse response) {
-            if (response.wasDisconnected()) {
+            if (response.wasDisconnected()) { //客户端在完成读取到所有response之前断开连接
                 ClientRequest request = response.request();
                 RequestSend send = request.request();
                 ApiKeys api = ApiKeys.forId(send.header().apiKey());
@@ -423,6 +438,7 @@ public class ConsumerNetworkClient implements Closeable {
                         api, request, correlation, send.destination());
                 raise(DisconnectException.INSTANCE);
             } else {
+            	//正确完成。跟踪ConsumerNetworkClient.send方法中构造RequestFutureCompletionHandler，发现调用的是默认构造函数，回调方法里面没有添加任何一个listener，即成功了啥也不用做
                 complete(response);
             }
         }

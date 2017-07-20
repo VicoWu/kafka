@@ -355,7 +355,8 @@ public abstract class AbstractCoordinator implements Closeable {
                 AbstractCoordinator.this.protocol = joinResponse.groupProtocol();
                 sensors.joinLatency.record(response.requestLatencyMs());
                 if (joinResponse.isLeader()) {
-                    onJoinLeader(joinResponse).chain(future);
+                    onJoinLeader(joinResponse).chain(future);//我是leader
+
                 } else {
                     onJoinFollower().chain(future);
                 }
@@ -398,6 +399,11 @@ public abstract class AbstractCoordinator implements Closeable {
         return sendSyncGroupRequest(request);
     }
 
+    /**
+     *  Consumer Group Leader收到response并且自己是leader 的时候会被调用，
+     * @param joinResponse
+     * @return
+     */
     private RequestFuture<ByteBuffer> onJoinLeader(JoinGroupResponse joinResponse) {
         try {
             // perform the leader synchronization and send back the assignment for the group

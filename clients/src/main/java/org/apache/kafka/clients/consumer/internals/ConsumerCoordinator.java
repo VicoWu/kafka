@@ -58,6 +58,7 @@ import java.util.Set;
 
 /**
  * This class manages the coordination process with the consumer coordinator.
+ * 每一个KafkaConsumer都会有一个ConsumerCoordinator对象
  */
 public final class ConsumerCoordinator extends AbstractCoordinator {
 
@@ -147,6 +148,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             @Override
             public void onMetadataUpdate(Cluster cluster) {
 
+            	//如果用户通过SubscriptionState.AUTO_PATTERN订阅的，则过滤出这些topic并更新元数据
                 if (subscriptions.hasPatternSubscription()) {
 
                     Set<String> unauthorizedTopics = new HashSet<String>();
@@ -169,6 +171,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                     throw new TopicAuthorizationException(new HashSet<>(cluster.unauthorizedTopics()));
                 }
 
+              //如果用户通过SubscriptionState.AUTO_TOPIC订阅的，则过滤出这些topic并更新元数据
                 // check if there are any changes to the metadata which should trigger a rebalance
                 if (subscriptions.partitionsAutoAssigned()) {
                     MetadataSnapshot snapshot = new MetadataSnapshot(subscriptions, cluster);
@@ -211,6 +214,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
+      //assignment 记录了分配给自己的partition信息
         Assignment assignment = ConsumerProtocol.deserializeAssignment(assignmentBuffer);
 
         // set the flag to refresh last committed offsets
@@ -240,6 +244,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
     }
 
+  //这个方法会在AbstractCoordinator.onJoinLeader()中被调用
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId,
                                                         String assignmentStrategy,
@@ -248,6 +253,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
 
+      //将所有consumer订阅的topic的集合加入到allSubscribedTopics中
         Set<String> allSubscribedTopics = new HashSet<>();
         Map<String, Subscription> subscriptions = new HashMap<>();
         for (Map.Entry<String, ByteBuffer> subscriptionEntry : allSubscriptions.entrySet()) {

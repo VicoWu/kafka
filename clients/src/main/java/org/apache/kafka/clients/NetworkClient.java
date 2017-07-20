@@ -57,6 +57,7 @@ public class NetworkClient implements KafkaClient {
     private final Random randOffset;
 
     /* the state of each node's connection */
+    //管理所有连接状态
     private final ClusterConnectionStates connectionStates;
 
     /* the set of requests currently being sent or awaiting a response */
@@ -141,7 +142,7 @@ public class NetworkClient implements KafkaClient {
 
     /**
      * Begin connecting to the given node, return true if we are already connected and ready to send to that node.
-     *
+     * 检查节点是否可以被连接
      * @param node The node to check
      * @param now The current timestamp
      * @return True if we are ready to send to the given node
@@ -156,7 +157,8 @@ public class NetworkClient implements KafkaClient {
 
         if (connectionStates.canConnect(node.idString(), now))
             // if we are interested in sending to a node and we don't have a connection to it, initiate one
-            initiateConnect(node, now);
+        	//如果还没有建立连接，则初始化连接，但是初始化连接是异步的，只有收到回调以后ConnectionState才是ready的状态，因此，此时还会返回false，表示连接是不可用的
+        	initiateConnect(node, now);
 
         return false;
     }
@@ -203,7 +205,7 @@ public class NetworkClient implements KafkaClient {
 
     /**
      * Check if the node with the given id is ready to send more requests.
-     *
+     * 判断节点是否处于ready状态，包括，集群没有元数据更新，同时，已经建立连接并且连接处于正常状态，并且处于未完成状态的请求的数量在允许范围以内
      * @param node The node
      * @param now The current time in ms
      * @return true if the node is ready
@@ -238,6 +240,7 @@ public class NetworkClient implements KafkaClient {
         doSend(request, now);
     }
 
+    //doSend并不真的执行发送，而是组装发送请求
     private void doSend(ClientRequest request, long now) {
         request.setSendTimeMs(now);
         this.inFlightRequests.add(request);
@@ -262,6 +265,7 @@ public class NetworkClient implements KafkaClient {
             log.error("Unexpected error during I/O", e);
         }
 
+        //从selector中取出所有请求，然后对这些请求进行处理，处理以后的response都放进responses
         // process completed actions
         long updatedNow = this.time.milliseconds();
         List<ClientResponse> responses = new ArrayList<>();
@@ -428,9 +432,10 @@ public class NetworkClient implements KafkaClient {
     private void handleCompletedSends(List<ClientResponse> responses, long now) {
         // if no response is expected then when the send is completed, return it
         for (Send send : this.selector.completedSends()) {
+        	//提取所有inflight请求中指定节点的所有请求中的最后一个请求
             ClientRequest request = this.inFlightRequests.lastSent(send.destination());
-            if (!request.expectResponse()) {
-                this.inFlightRequests.completeLastSent(send.destination());
+            if (!request.expectResponse()) {//如果这个请求不需要响应
+                this.inFlightRequests.completeLastSent(send.destination());//直接从队列中取出这个request
                 responses.add(new ClientResponse(request, now, false, null));
             }
         }
@@ -444,8 +449,8 @@ public class NetworkClient implements KafkaClient {
      */
     private void handleCompletedReceives(List<ClientResponse> responses, long now) {
         for (NetworkReceive receive : this.selector.completedReceives()) {
-            String source = receive.source();
-            ClientRequest req = inFlightRequests.completeNext(source);
+            String source = receive.source();//source就是node节点
+            ClientRequest req = inFlightRequests.completeNext(source);//从inFlightRequests中删除
             Struct body = parseResponse(receive.payload(), req.request().header());
             if (!metadataUpdater.maybeHandleCompletedReceive(req, now, body))
                 responses.add(new ClientResponse(req, now, false, body));
@@ -459,7 +464,7 @@ public class NetworkClient implements KafkaClient {
      * @param now The current time
      */
     private void handleDisconnections(List<ClientResponse> responses, long now) {
-        for (String node : this.selector.disconnected()) {
+        for (String node : this.selector.disconnected()) {//对于每一个失去联络的节点
             log.debug("Node {} disconnected.", node);
             processDisconnection(responses, node, now);
         }
@@ -489,6 +494,7 @@ public class NetworkClient implements KafkaClient {
 
     /**
      * Initiate a connection to the given node
+     * 初始化和一个节点之间的连接状态
      */
     private void initiateConnect(Node node, long now) {
         String nodeConnectionId = node.idString();

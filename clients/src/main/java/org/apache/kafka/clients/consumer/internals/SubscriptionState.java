@@ -45,28 +45,36 @@ import java.util.regex.Pattern;
  * partitions. This is updated through {@link #committed(TopicPartition, OffsetAndMetadata)} and can be used
  * to set the initial fetch position (e.g. {@link Fetcher#resetOffset(TopicPartition)}.
  */
+
+//每一个Consumer都维护了一个SubscriptionState对象
 public class SubscriptionState {
 
     private enum SubscriptionType {
-        NONE, AUTO_TOPICS, AUTO_PATTERN, USER_ASSIGNED
+        NONE, 
+        AUTO_TOPICS,//用户订阅指定topic
+        AUTO_PATTERN,//用户通过正则订阅指定的一些topic
+        USER_ASSIGNED//用户手动指定订阅某些Topic-Partition，这种情况下，不会进行rebalance操作
     };
 
     /* the type of subscription */
     private SubscriptionType subscriptionType;
 
     /* the pattern user has requested */
-    private Pattern subscribedPattern;
+    private Pattern subscribedPattern;//通过pattern模式订阅的时候，所有与该pattern match的topic都会被subscribe
 
     /* the list of topics the user has requested */
-    private final Set<String> subscription;
+    private final Set<String> subscription;//订阅的topic的名字，只有当订阅模式是AUTO_TOPICS和AUTO_PATTERN
 
     /* the list of topics the group has subscribed to (set only for the leader on join group completion) */
+    //描述了这个group所有订阅的topic的集合。在一个consumer group中会有多个consumer，某一个consumer会被选举为leader,只有
+    //只有leader身份的ConsumerCoordinator会记录这个group中所有consumer的topic。注意，一个consumer group中不同的consumer可以订阅不同的topic
     private final Set<String> groupSubscription;
 
     /* the list of partitions the user has requested */
     private final Set<TopicPartition> userAssignment;
 
     /* the list of partitions currently assigned */
+  //当前分配给自己的Topic-Partition，当一个consumer订阅了某些topic，这些topic中的某些partition会被分配给自己
     private final Map<TopicPartition, TopicPartitionState> assignment;
 
     /* do we need to request a partition assignment from the coordinator? */
