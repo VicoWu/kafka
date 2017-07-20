@@ -182,6 +182,7 @@ public class ConsumerConfig extends AbstractConfig {
 
 
     /** <code>exclude.internal.topics</code> */
+    //是否排除内置的topic，如果为true，则除非用户显式地订阅这个topic，在wildcard模式下，这些内置的topic不会被消费。
     public static final String EXCLUDE_INTERNAL_TOPICS_CONFIG = "exclude.internal.topics";
     private static final String EXCLUDE_INTERNAL_TOPICS_DOC = "Whether records from internal topics (such as offsets) should be exposed to the consumer. "
                                                             + "If set to <code>true</code> the only way to receive records from an internal topic is subscribing to it.";

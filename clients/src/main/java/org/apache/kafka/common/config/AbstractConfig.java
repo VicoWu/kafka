@@ -68,6 +68,7 @@ public class AbstractConfig {
         this.used = Collections.synchronizedSet(new HashSet<String>());
     }
 
+    //如果当前对象的实现是ConsumerConfig,则values中存放了ConsumerConfig.CONFIG
     protected Object get(String key) {
         if (!values.containsKey(key))
             throw new ConfigException(String.format("Unknown configuration '%s'", key));

@@ -41,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Higher level consumer access to the network layer with basic support for futures and
  * task scheduling. This class is not thread-safe, except for wakeup().
+ * ConsumerNetworkClient主要任务是网络通信和定时任务（schedule()）
  */
 public class ConsumerNetworkClient implements Closeable {
     private static final Logger log = LoggerFactory.getLogger(ConsumerNetworkClient.class);

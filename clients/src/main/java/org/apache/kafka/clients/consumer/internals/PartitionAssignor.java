@@ -42,6 +42,7 @@ public interface PartitionAssignor {
      * @param topics Topics subscribed to through {@link org.apache.kafka.clients.consumer.KafkaConsumer#subscribe(java.util.Collection)}
      *               and variants
      * @return Non-null subscription with optional user data
+     * Subscription封装了一个消费者的订阅情况，包括订阅的topic以及一些额外的元数据。consumer leader将会根据这些信息来进行assign操作
      */
     Subscription subscription(Set<String> topics);
 
@@ -51,6 +52,7 @@ public interface PartitionAssignor {
      * @param subscriptions Subscriptions from all members provided through {@link #subscription(Set)}
      * @return A map from the members to their respective assignment. This should have one entry
      *         for all members who in the input subscription map.
+     * 根据当前集群的元数据，以及当前所有消费者的订阅信息，执行分区分配
      */
     Map<String, Assignment> assign(Cluster metadata, Map<String, Subscription> subscriptions);
 
@@ -58,6 +60,7 @@ public interface PartitionAssignor {
     /**
      * Callback which is invoked when a group member receives its assignment from the leader.
      * @param assignment The local member's assignment as provided by the leader in {@link #assign(Cluster, Map)}
+     * 消费者收到分区分配结果以后的回调方法
      */
     void onAssignment(Assignment assignment);
 
@@ -69,8 +72,8 @@ public interface PartitionAssignor {
     String name();
 
     class Subscription {
-        private final List<String> topics;
-        private final ByteBuffer userData;
+        private final List<String> topics;//某个member订阅的topic集合
+        private final ByteBuffer userData;//用户自定义数据，在subscription()中，用户可以添加自定义数据
 
         public Subscription(List<String> topics, ByteBuffer userData) {
             this.topics = topics;
@@ -97,8 +100,9 @@ public interface PartitionAssignor {
         }
     }
 
+    //分区的分配结果
     class Assignment {
-        private final List<TopicPartition> partitions;
+        private final List<TopicPartition> partitions;//被分配了哪些TopicPartition
         private final ByteBuffer userData;
 
         public Assignment(List<TopicPartition> partitions, ByteBuffer userData) {

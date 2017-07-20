@@ -74,11 +74,11 @@ public class SubscriptionState {
     private final Set<TopicPartition> userAssignment;
 
     /* the list of partitions currently assigned */
-  //当前分配给自己的Topic-Partition，当一个consumer订阅了某些topic，这些topic中的某些partition会被分配给自己
+    //当前分配给自己的Topic-Partition，当一个consumer订阅了某些topic，这些topic中的某些partition会被分配给自己
     private final Map<TopicPartition, TopicPartitionState> assignment;
 
     /* do we need to request a partition assignment from the coordinator? */
-    private boolean needsPartitionAssignment;
+    private boolean needsPartitionAssignment;//分区重新分配标记符,为true，则需要重新进行join group操作
 
     /* do we need to request the latest committed offsets from the coordinator? */
     private boolean needsFetchCommittedOffsets;
@@ -117,6 +117,12 @@ public class SubscriptionState {
         this.subscriptionType = SubscriptionType.NONE;
     }
 
+    /**
+     * 这个listener是在KafkaConsumer.subcribe()中指定的，如果什么都不做，可以指定为NoOpConsumerRebalanceListener，
+     * 也可以自己定义一个listener
+     * @param topics
+     * @param listener
+     */
     public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
         if (listener == null)
             throw new IllegalArgumentException("RebalanceListener cannot be null");
@@ -136,6 +142,7 @@ public class SubscriptionState {
             this.needsPartitionAssignment = true;
 
             // Remove any assigned partitions which are no longer subscribed to
+            //对于assignment中的tp，必须保证所有tp的topic都在subscription中
             for (Iterator<TopicPartition> it = assignment.keySet().iterator(); it.hasNext(); ) {
                 TopicPartition tp = it.next();
                 if (!subscription.contains(tp.topic()))
@@ -155,7 +162,13 @@ public class SubscriptionState {
         this.groupSubscription.addAll(topics);
     }
 
+    /**
+     * 在onJoinPrepare()中被调用
+     */
     public void needReassignment() {
+    	//由于groupSubscription中存放的是leader身份的Consumer所在的group的所偶有member的topic，如果是follower，则存放自己所订阅的topic。
+    	//现在如果发生了reassign,则需要
+    	//删掉自己所订阅的那部分topic，保留别人的
         this.groupSubscription.retainAll(subscription);
         this.needsPartitionAssignment = true;
     }
@@ -177,7 +190,7 @@ public class SubscriptionState {
 
         this.assignment.keySet().retainAll(this.userAssignment);
 
-        this.needsPartitionAssignment = false;
+        this.needsPartitionAssignment = false;//在这种模式下，任何情况下都不需要分区分配
         this.needsFetchCommittedOffsets = true;
     }
 

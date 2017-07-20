@@ -155,6 +155,7 @@ public class RequestFuture<T> {
 
     /**
      * Convert from a request future of one type to another type
+     * 适配器模式，修改RequestFutureListener的onSuccess()和onFailure()方法的实现
      * @param adapter The adapter which does the conversion
      * @param <S> The type of the future adapted to
      * @return The new future

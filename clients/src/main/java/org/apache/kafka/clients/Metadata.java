@@ -242,6 +242,7 @@ public final class Metadata {
      * MetadataUpdate Listener
      */
     public interface Listener {
+    	//元数据发生问题以后的回调类，查看ConsumerCoordinator.addMetadataListener()
         void onMetadataUpdate(Cluster cluster);
     }
 

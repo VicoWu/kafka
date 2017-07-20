@@ -15,6 +15,7 @@ package org.apache.kafka.clients.consumer.internals;
 import org.apache.kafka.clients.ClientResponse;
 import org.apache.kafka.clients.Metadata;
 import org.apache.kafka.clients.consumer.CommitFailedException;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
 import org.apache.kafka.clients.consumer.OffsetAndMetadata;
 import org.apache.kafka.clients.consumer.OffsetCommitCallback;
@@ -74,7 +75,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     private final ConsumerInterceptors<?, ?> interceptors;
     private final boolean excludeInternalTopics;
 
-    private MetadataSnapshot metadataSnapshot;
+    private MetadataSnapshot metadataSnapshot;//topic的分区数量记录表，记录了每个topic的分区数量
     private MetadataSnapshot assignmentSnapshot;
 
     /**
@@ -152,11 +153,11 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 if (subscriptions.hasPatternSubscription()) {
 
                     Set<String> unauthorizedTopics = new HashSet<String>();
-                    for (String topic : cluster.unauthorizedTopics()) {
-                        if (filterTopic(topic))
+                    for (String topic : cluster.unauthorizedTopics()) {//对于每一个未授权的topic
+                        if (filterTopic(topic))//如果这个topic满足正则订阅条件，并且这个topic并不是内部topic
                             unauthorizedTopics.add(topic);
                     }
-                    if (!unauthorizedTopics.isEmpty())
+                    if (!unauthorizedTopics.isEmpty())//存在未授权的topic
                         throw new TopicAuthorizationException(unauthorizedTopics);
 
                     final List<String> topicsToSubscribe = new ArrayList<>();
@@ -173,10 +174,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
               //如果用户通过SubscriptionState.AUTO_TOPIC订阅的，则过滤出这些topic并更新元数据
                 // check if there are any changes to the metadata which should trigger a rebalance
-                if (subscriptions.partitionsAutoAssigned()) {
+                
+                if (subscriptions.partitionsAutoAssigned()) {	
                     MetadataSnapshot snapshot = new MetadataSnapshot(subscriptions, cluster);
-                    if (!snapshot.equals(metadataSnapshot)) {
+                    //如果topic都相同并且每个toic的分区数量都没有发生变化，则返回true
+                    if (!snapshot.equals(metadataSnapshot)) {//某些topic的partition数量已经发生变化
                         metadataSnapshot = snapshot;
+                      //需要重新进行分区分配，将分区重新分配标记置位，这样在ensureActiveGroup中检测到，就会重新申请joinGroup
                         subscriptions.needReassignment();
                     }
                 }
@@ -185,11 +189,14 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         });
     }
 
+    //如果这个topic满足订阅的pattern条件，并且，这个topic不是内部topic
+    //在excludeInternalTopics打开的情况下，wildcard模式下，不可以消费内部topic
     private boolean filterTopic(String topic) {
         return subscriptions.getSubscribedPattern().matcher(topic).matches() &&
                 !(excludeInternalTopics && TopicConstants.INTERNAL_TOPICS.contains(topic));
     }
 
+    //查找assignor
     private PartitionAssignor lookupAssignor(String name) {
         for (PartitionAssignor assignor : this.assignors) {
             if (assignor.name().equals(name))
@@ -244,11 +251,15 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
     }
 
-  //这个方法会在AbstractCoordinator.onJoinLeader()中被调用
+    /**
+     * 这个方法会在AbstractCoordinator.onJoinLeader()中被调用，即只有leader身份的coordinator才会调用这个方法
+     */
     @Override
     protected Map<String, ByteBuffer> performAssignment(String leaderId,
                                                         String assignmentStrategy,
                                                         Map<String, ByteBuffer> allSubscriptions) {
+    	//从配置的assignors中，寻找名字为assignmentStrategy 的assignor
+    	//查看KafkaConsumer的构造函数中可以看到，this.assignors来自配置项@code ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG
         PartitionAssignor assignor = lookupAssignor(assignmentStrategy);
         if (assignor == null)
             throw new IllegalStateException("Coordinator selected invalid assignment protocol: " + assignmentStrategy);
@@ -270,7 +281,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         // update metadata (if needed) and keep track of the metadata used for assignment so that
         // we can check after rebalance completion whether anything has changed
         client.ensureFreshMetadata();
-        assignmentSnapshot = metadataSnapshot;
+        assignmentSnapshot = metadataSnapshot;//分区分配以前备份当前的元数据
 
         log.debug("Performing assignment for group {} using strategy {} with subscriptions {}",
                 groupId, assignor.name(), subscriptions);
@@ -289,11 +300,13 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     @Override
+    //join group之前的准备工作，
     protected void onJoinPrepare(int generation, String memberId) {
         // commit offsets prior to rebalance if auto-commit enabled
         maybeAutoCommitOffsetsSync();
 
         // execute the user's callback before rebalance
+        //获取之前的subscription的listener
         ConsumerRebalanceListener listener = subscriptions.listener();
         log.info("Revoking previously assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
@@ -725,6 +738,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
     private static class MetadataSnapshot {
+    	//记录每个topic的分区数量
         private final Map<String, Integer> partitionsPerTopic;
 
         public MetadataSnapshot(SubscriptionState subscription, Cluster cluster) {
@@ -734,6 +748,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             this.partitionsPerTopic = partitionsPerTopic;
         }
 
+        //如果topic都相同并且每个toic的分区数量都没有发生变化，则返回true
         @Override
         public boolean equals(Object o) {
             if (this == o) return true;

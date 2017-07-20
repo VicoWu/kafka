@@ -93,8 +93,8 @@ public abstract class AbstractCoordinator implements Closeable {
 
     private boolean needsJoinPrepare = true;
     private boolean rejoinNeeded = true;
-    protected Node coordinator;
-    protected String memberId;
+    protected Node coordinator;//服务端GroupCoordinator所在的节点
+    protected String memberId;//服务端GroupCoordinator分配给消费者的唯一的id
     protected String protocol;
     protected int generation;
 
@@ -333,7 +333,7 @@ public abstract class AbstractCoordinator implements Closeable {
 
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
         return client.send(coordinator, ApiKeys.JOIN_GROUP, request)
-                .compose(new JoinGroupResponseHandler());
+                .compose(new JoinGroupResponseHandler());//适配器模式
     }
 
 
@@ -344,6 +344,7 @@ public abstract class AbstractCoordinator implements Closeable {
             return new JoinGroupResponse(response.responseBody());
         }
 
+        //收到JoinGroup响应以后的回调方法
         @Override
         public void handle(JoinGroupResponse joinResponse, RequestFuture<ByteBuffer> future) {
             Errors error = Errors.forCode(joinResponse.errorCode());
@@ -355,6 +356,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 AbstractCoordinator.this.protocol = joinResponse.groupProtocol();
                 sensors.joinLatency.record(response.requestLatencyMs());
                 if (joinResponse.isLeader()) {
+                	//责任链模式，将future加入到当前这个RequestFuture所维护的List<Listener>中
                     onJoinLeader(joinResponse).chain(future);//我是leader
 
                 } else {
@@ -400,13 +402,16 @@ public abstract class AbstractCoordinator implements Closeable {
     }
 
     /**
-     *  Consumer Group Leader收到response并且自己是leader 的时候会被调用，
+     *  Consumer Group Leader收到response并且自己是leader 的时候会被调用
+     *  与onJoinFollower的区别是，此时SyncGroupRequest请求中的groupAssignment不是空的
      * @param joinResponse
      * @return
      */
     private RequestFuture<ByteBuffer> onJoinLeader(JoinGroupResponse joinResponse) {
         try {
             // perform the leader synchronization and send back the assignment for the group
+        	//join group成功以后，如果自己是leader，那么 joinResponse.groupProtocol()中应该保存了assignor的名字，
+        	//根据该名字获取对应的assignor，然后进行分区分配，查看ConsumerCoordinator.performAssignment()
             Map<String, ByteBuffer> groupAssignment = performAssignment(joinResponse.leaderId(), joinResponse.groupProtocol(),
                     joinResponse.members());
 
