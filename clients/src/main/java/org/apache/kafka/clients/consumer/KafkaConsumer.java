@@ -644,14 +644,14 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             List<ConsumerInterceptor<K, V>> interceptorList = (List) (new ConsumerConfig(userProvidedConfigs)).getConfiguredInstances(ConsumerConfig.INTERCEPTOR_CLASSES_CONFIG,
                     ConsumerInterceptor.class);
             this.interceptors = interceptorList.isEmpty() ? null : new ConsumerInterceptors<>(interceptorList);
-            this.coordinator = new ConsumerCoordinator(this.client,
+            this.coordinator = new ConsumerCoordinator(this.client,//ConsumerNetworkClient对象，用来代理和远程服务器的通信
                     config.getString(ConsumerConfig.GROUP_ID_CONFIG),
                     config.getInt(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG),
                     config.getInt(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG),
-                    assignors,
+                    assignors,//配置文件中配置的partition assignors
                     this.metadata,
                     this.subscriptions,
-                    metrics,
+                    metrics,//kafka metrics
                     metricGrpPrefix,
                     this.time,
                     retryBackoffMs,
@@ -927,7 +927,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      */
     @Override
     public ConsumerRecords<K, V> poll(long timeout) {
-        acquire();
+        acquire();//确保只有一个唯一线程调用poll方法
         try {
             if (timeout < 0)
                 throw new IllegalArgumentException("Timeout must not be negative");
@@ -936,6 +936,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
             long start = time.milliseconds();
             long remaining = timeout;
             do {
+            	//进行一次消费操作
                 Map<TopicPartition, List<ConsumerRecord<K, V>>> records = pollOnce(remaining);
                 if (!records.isEmpty()) {
                     // before returning the fetched records, we can send off the next round of fetches
@@ -969,6 +970,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * heart-beating, auto-commits, and offset updates.
      * @param timeout The maximum time to block in the underlying poll
      * @return The fetched records (may be empty)
+     * 进行一次消费操作
      */
     private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollOnce(long timeout) {
         // TODO: Sub-requests should take into account the poll timeout (KAFKA-1894)
@@ -1426,8 +1428,11 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * @throws ConcurrentModificationException if another thread already has the lock
      */
     private void acquire() {
-        ensureNotClosed();
-        long threadId = Thread.currentThread().getId();
+        ensureNotClosed();//确保consumer没有关闭，this.closed标记当前consumer是否关闭
+        long threadId = Thread.currentThread().getId();//获取当前线程的threadId
+        //如果当前线程id不等于currentThread则抛出异常，并且currentThread不等于NO_CURRENT_THREAD，则抛出异常
+        //如果当前线程id不等于currentThread则抛出异常，但是currentThread等于NO_CURRENT_THREAD，说明还没有任何一个线程访问过，此时直接将currentThread设置为threadId
+        //此后任何其他线程访问这个consumerId,都会抛出异常
         if (threadId != currentThread.get() && !currentThread.compareAndSet(NO_CURRENT_THREAD, threadId))
             throw new ConcurrentModificationException("KafkaConsumer is not safe for multi-threaded access");
         refcount.incrementAndGet();

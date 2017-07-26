@@ -303,15 +303,15 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     //join group之前的准备工作，
     protected void onJoinPrepare(int generation, String memberId) {
         // commit offsets prior to rebalance if auto-commit enabled
-        maybeAutoCommitOffsetsSync();
+        maybeAutoCommitOffsetsSync();//如果自动提交打开，则提交offset
 
         // execute the user's callback before rebalance
         //获取之前的subscription的listener
         ConsumerRebalanceListener listener = subscriptions.listener();
         log.info("Revoking previously assigned partitions {} for group {}", subscriptions.assignedPartitions(), groupId);
         try {
-            Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());
-            listener.onPartitionsRevoked(revoked);
+            Set<TopicPartition> revoked = new HashSet<>(subscriptions.assignedPartitions());//分配给自己的partition会被剥夺
+            listener.onPartitionsRevoked(revoked);//当前被assign的所有partition都必须被revoke，即剥夺掉
         } catch (WakeupException e) {
             throw e;
         } catch (Exception e) {
@@ -382,7 +382,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
             if (subscriptions.hasPatternSubscription())
                 client.ensureFreshMetadata();
 
-            ensureActiveGroup();
+            ensureActiveGroup();//确保自己已经加入了group并且消息处于同步状态
         }
     }
 
@@ -500,8 +500,9 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
     }
 
+    //需要将当前消费的offset状态进行提交，避免同一个group的消息发生重复消费，这违反了Kafka关于Group的定义
     private void maybeAutoCommitOffsetsSync() {
-        if (autoCommitEnabled) {
+        if (autoCommitEnabled) {//自动offset提交已经打开
             try {
                 commitOffsetsSync(subscriptions.allConsumed());
             } catch (WakeupException e) {

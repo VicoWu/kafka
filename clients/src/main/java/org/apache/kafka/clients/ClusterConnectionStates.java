@@ -48,6 +48,7 @@ final class ClusterConnectionStates {
      * Return true if we are disconnected from the given node and can't re-establish a connection yet
      * @param id The connection to check
      * @param now The current time in ms
+     * 如果我们与一个节点断开连接，并且当前距离断开连接的时间小于reconnectBackoffMs，则这个节点处于黑名单状态
      */
     public boolean isBlackedOut(String id, long now) {
         NodeConnectionState state = nodeState.get(id);

@@ -167,8 +167,7 @@ public class SubscriptionState {
      */
     public void needReassignment() {
     	//由于groupSubscription中存放的是leader身份的Consumer所在的group的所偶有member的topic，如果是follower，则存放自己所订阅的topic。
-    	//现在如果发生了reassign,则需要
-    	//删掉自己所订阅的那部分topic，保留别人的
+    	//现在如果准备进行重新分配分区，则先去掉不属于自己订阅的那些topic
         this.groupSubscription.retainAll(subscription);
         this.needsPartitionAssignment = true;
     }

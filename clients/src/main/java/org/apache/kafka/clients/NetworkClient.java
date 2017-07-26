@@ -358,15 +358,16 @@ public class NetworkClient implements KafkaClient {
         int inflight = Integer.MAX_VALUE;
         Node found = null;
 
-        int offset = this.randOffset.nextInt(nodes.size());
+        int offset = this.randOffset.nextInt(nodes.size());//从一个随机位置开始，防止每次都从同一个节点开始选择
         for (int i = 0; i < nodes.size(); i++) {
             int idx = (offset + i) % nodes.size();
             Node node = nodes.get(idx);
             int currInflight = this.inFlightRequests.inFlightRequestCount(node.idString());
             if (currInflight == 0 && this.connectionStates.isConnected(node.idString())) {
                 // if we find an established connection with no in-flight requests we can stop right away
-                return node;
+                return node;//偏向于正在进行的请求为0并且已经建立连接的节点
             } else if (!this.connectionStates.isBlackedOut(node.idString(), now) && currInflight < inflight) {
+            	//如果这个节点不是处于黑名单状态，这可能是因为这个节点处于连接状态，或者，这个节点虽然已经断开连接，但是短连接时间已经超过了黑名单时间，可以尝试重新建立连接了
                 // otherwise if this is the best we have found so far, record that
                 inflight = currInflight;
                 found = node;

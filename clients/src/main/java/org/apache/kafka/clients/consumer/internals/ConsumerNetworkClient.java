@@ -110,7 +110,7 @@ public class ConsumerNetworkClient implements Closeable {
         RequestFutureCompletionHandler future = new RequestFutureCompletionHandler();
         RequestHeader header = client.nextRequestHeader(api);
         RequestSend send = new RequestSend(node.idString(), header, request.toStruct());
-      //创建send对象，放到unsent中
+        //创建send对象，放到unsent中
         put(node, new ClientRequest(now, true, send, future));
         return future;
     }
@@ -124,6 +124,7 @@ public class ConsumerNetworkClient implements Closeable {
         nodeUnsent.add(request);
     }
 
+    //获取一个连接数最少或者干脆已经断开连接的节点，以打到负载均衡的目的
     public Node leastLoadedNode() {
         return client.leastLoadedNode(time.milliseconds());
     }

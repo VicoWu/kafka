@@ -44,13 +44,15 @@ public class RoundRobinAssignor extends AbstractPartitionAssignor {
                                                     Map<String, List<String>> subscriptions) {
         Map<String, List<TopicPartition>> assignment = new HashMap<>();
         for (String memberId : subscriptions.keySet())
-            assignment.put(memberId, new ArrayList<TopicPartition>());
+            assignment.put(memberId, new ArrayList<TopicPartition>());//初始化分配规则
 
-        CircularIterator<String> assigner = new CircularIterator<>(Utils.sorted(subscriptions.keySet()));
-        for (TopicPartition partition : allPartitionsSorted(partitionsPerTopic, subscriptions)) {
+        CircularIterator<String> assigner = new CircularIterator<>(Utils.sorted(subscriptions.keySet()));//assigner存放了所有的consumer
+        for (TopicPartition partition : allPartitionsSorted(partitionsPerTopic, subscriptions)) {//所有的consumer订阅的所有的TopicPartition的List
             final String topic = partition.topic();
-            while (!subscriptions.get(assigner.peek()).contains(topic))
+            while (!subscriptions.get(assigner.peek()).contains(topic))// 如果当前这个assigner(consumer)没有订阅这个topic，直接跳过
                 assigner.next();
+            //跳出循环，表示终于找到了订阅过这个TopicPartition对应的topic的assigner
+            //将这个partition分派给对应的assigner
             assignment.get(assigner.next()).add(partition);
         }
         return assignment;
@@ -60,16 +62,16 @@ public class RoundRobinAssignor extends AbstractPartitionAssignor {
     public List<TopicPartition> allPartitionsSorted(Map<String, Integer> partitionsPerTopic,
                                                     Map<String, List<String>> subscriptions) {
         SortedSet<String> topics = new TreeSet<>();
-        for (List<String> subscription : subscriptions.values())
-            topics.addAll(subscription);
+        for (List<String> subscription : subscriptions.values())//对于所有的订阅的topic的list
+            topics.addAll(subscription);//收集所有的topic，并去重
 
         List<TopicPartition> allPartitions = new ArrayList<>();
         for (String topic : topics) {
-            Integer numPartitionsForTopic = partitionsPerTopic.get(topic);
+            Integer numPartitionsForTopic = partitionsPerTopic.get(topic);// 当前这个topic的数量
             if (numPartitionsForTopic != null)
                 allPartitions.addAll(AbstractPartitionAssignor.partitions(topic, numPartitionsForTopic));
         }
-        return allPartitions;
+        return allPartitions;//所有的partition的List
     }
 
     @Override

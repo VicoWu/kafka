@@ -92,7 +92,7 @@ public abstract class AbstractCoordinator implements Closeable {
     protected final long retryBackoffMs;
 
     private boolean needsJoinPrepare = true;
-    private boolean rejoinNeeded = true;
+    private boolean rejoinNeeded = true;//是否需要重新joinGroup，初始化状态下为true代表需要进行joinGroup操作。同时，如果leave group或者join group失败也为true
     protected Node coordinator;//服务端GroupCoordinator所在的节点
     protected String memberId;//服务端GroupCoordinator分配给消费者的唯一的id
     protected String protocol;
@@ -114,7 +114,7 @@ public abstract class AbstractCoordinator implements Closeable {
         this.generation = OffsetCommitRequest.DEFAULT_GENERATION_ID;
         this.memberId = JoinGroupRequest.UNKNOWN_MEMBER_ID;
         this.groupId = groupId;
-        this.coordinator = null;
+        this.coordinator = null;//构造ConsumerCoordinator的时候，还无法知道GroupCoordinator所在的节点
         this.sessionTimeoutMs = sessionTimeoutMs;
         this.heartbeat = new Heartbeat(this.sessionTimeoutMs, heartbeatIntervalMs, time.milliseconds());
         this.heartbeatTask = new HeartbeatTask();
@@ -172,11 +172,12 @@ public abstract class AbstractCoordinator implements Closeable {
 
     /**
      * Block until the coordinator for this group is known and is ready to receive requests.
+     * 等待直到我们和服务端的GroupCoordinator取得连接
      */
     public void ensureCoordinatorReady() {
-        while (coordinatorUnknown()) {
+        while (coordinatorUnknown()) {//已经获取了GroupCoordinator的连接
             RequestFuture<Void> future = sendGroupCoordinatorRequest();
-            client.poll(future);
+            client.poll(future);//同步等待异步调用的结果
 
             if (future.failed()) {
                 if (future.isRetriable())
@@ -187,7 +188,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 // we found the coordinator, but the connection has failed, so mark
                 // it dead and backoff before retrying discovery
                 coordinatorDead();
-                time.sleep(retryBackoffMs);
+                time.sleep(retryBackoffMs);//等待一段时间，然后重试
             }
 
         }
@@ -196,6 +197,7 @@ public abstract class AbstractCoordinator implements Closeable {
     /**
      * Check whether the group should be rejoined (e.g. if metadata changes)
      * @return true if it should, false otherwise
+     * 
      */
     protected boolean needRejoin() {
         return rejoinNeeded;
@@ -205,16 +207,16 @@ public abstract class AbstractCoordinator implements Closeable {
      * Ensure that the group is active (i.e. joined and synced)
      */
     public void ensureActiveGroup() {
-        if (!needRejoin())
+        if (!needRejoin())//如果不需要重新joinGroup，则直接返回，表示group为active状态，否则，则需要joinGroup操作
             return;
 
         if (needsJoinPrepare) {
-            onJoinPrepare(generation, memberId);
+            onJoinPrepare(generation, memberId);//见ConsumerCoordinator.onJoinPrepare()，主要是对已经被分派的topicPartitiion进行清理
             needsJoinPrepare = false;
         }
 
-        while (needRejoin()) {
-            ensureCoordinatorReady();
+        while (needRejoin()) {//需要join group
+            ensureCoordinatorReady();//确认coordinator 已经是建立连接的状态的
 
             // ensure that there are no pending requests to the coordinator. This is important
             // in particular to avoid resending a pending JoinGroup request.
@@ -240,7 +242,7 @@ public abstract class AbstractCoordinator implements Closeable {
                     // after having been woken up, the exception is ignored and we will rejoin
                 }
             });
-            client.poll(future);
+            client.poll(future);//同步等待joinGroup的结果
 
             if (future.failed()) {
                 RuntimeException exception = future.exception();
@@ -473,6 +475,7 @@ public abstract class AbstractCoordinator implements Closeable {
      * Discover the current coordinator for the group. Sends a GroupMetadata request to
      * one of the brokers. The returned future should be polled to get the result of the request.
      * @return A request future which indicates the completion of the metadata request
+     * 选择一个远程的broker，向这个broker请求关于GroupCoordinator的相关数据
      */
     private RequestFuture<Void> sendGroupCoordinatorRequest() {
         // initiate the group metadata request
@@ -485,17 +488,23 @@ public abstract class AbstractCoordinator implements Closeable {
         } else {
             // create a group  metadata request
             log.debug("Sending coordinator request for group {} to broker {}", groupId, node);
+            //在请求中封装groupId
             GroupCoordinatorRequest metadataRequest = new GroupCoordinatorRequest(this.groupId);
             return client.send(node, ApiKeys.GROUP_COORDINATOR, metadataRequest)
                     .compose(new RequestFutureAdapter<ClientResponse, Void>() {
                         @Override
                         public void onSuccess(ClientResponse response, RequestFuture<Void> future) {
-                            handleGroupMetadataResponse(response, future);
+                            handleGroupMetadataResponse(response, future);//如果请求成功，将调用handleGroupMetadataResponse
                         }
                     });
         }
     }
 
+    /**
+     * 我们向远程请求GroupCoordinator的信息，如果成功，该回调会被调用
+     * @param resp
+     * @param future
+     */
     private void handleGroupMetadataResponse(ClientResponse resp, RequestFuture<Void> future) {
         log.debug("Received group coordinator response {}", resp);
 
@@ -511,7 +520,7 @@ public abstract class AbstractCoordinator implements Closeable {
             if (error == Errors.NONE) {
                 this.coordinator = new Node(Integer.MAX_VALUE - groupCoordinatorResponse.node().id(),
                         groupCoordinatorResponse.node().host(),
-                        groupCoordinatorResponse.node().port());
+                        groupCoordinatorResponse.node().port());//终于找到了coordinator，设置服务端coordinator
 
                 log.info("Discovered coordinator {} for group {}.", coordinator, groupId);
 

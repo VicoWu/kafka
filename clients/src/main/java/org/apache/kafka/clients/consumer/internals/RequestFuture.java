@@ -39,7 +39,7 @@ import java.util.List;
  */
 public class RequestFuture<T> {
 
-    private boolean isDone = false;
+    private boolean isDone = false;//这个回调是否已经成功发生，用来供同步等待回调结果
     private T value;
     private RuntimeException exception;
     private List<RequestFutureListener<T>> listeners = new ArrayList<>();
