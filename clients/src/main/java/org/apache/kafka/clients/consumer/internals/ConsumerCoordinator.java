@@ -118,7 +118,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
 
         if (autoCommitEnabled) {
             this.autoCommitTask = new AutoCommitTask(autoCommitIntervalMs);
-            this.autoCommitTask.reschedule();
+            this.autoCommitTask.reschedule();//offset自动提交任务，异步提交。每次提交成功以后，会自动创建下一个自动提交任务并在下一个时间点执行。
         } else {
             this.autoCommitTask = null;
         }
@@ -398,6 +398,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
     }
 
 
+    //异步提交offset，当用户想要显式异步提交offset即调用KafkaConsumer.commitAsync,或者
     public void commitOffsetsAsync(final Map<TopicPartition, OffsetAndMetadata> offsets, OffsetCommitCallback callback) {
         this.subscriptions.needRefreshCommits();
         RequestFuture<Void> future = sendOffsetCommitRequest(offsets);
@@ -465,7 +466,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         }
 
         private void reschedule() {
-            client.schedule(this, time.milliseconds() + interval);
+            client.schedule(this, time.milliseconds() + interval);//将AutoCommitTask添加到ConsumerNetworkClient.delayedTasks中，等待异步执行
         }
 
         private void reschedule(long at) {
@@ -490,10 +491,10 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 @Override
                 public void onComplete(Map<TopicPartition, OffsetAndMetadata> offsets, Exception exception) {
                     if (exception == null) {
-                        reschedule(now + interval);
+                        reschedule(now + interval);//定制下一次offset提交的任务
                     } else {
                         log.warn("Auto offset commit failed for group {}: {}", groupId, exception.getMessage());
-                        reschedule(now + interval);
+                        reschedule(now + interval);//定制下一次offset提交的任务
                     }
                 }
             });
@@ -545,7 +546,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                 offsetData);
 
         log.trace("Sending offset-commit request with {} to coordinator {} for group {}", offsets, coordinator, groupId);
-
+        // ConsumerNetworkClient.send会将请求放到unsend中
         return client.send(coordinator, ApiKeys.OFFSET_COMMIT, req)
                 .compose(new OffsetCommitResponseHandler(offsets));
     }
@@ -656,6 +657,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         OffsetFetchRequest request = new OffsetFetchRequest(this.groupId, new ArrayList<>(partitions));
 
         // send the request with a callback
+        // ConsumerNetworkClient.send会将请求放到unsend中
         return client.send(coordinator, ApiKeys.OFFSET_FETCH, request)
                 .compose(new OffsetFetchResponseHandler());
     }

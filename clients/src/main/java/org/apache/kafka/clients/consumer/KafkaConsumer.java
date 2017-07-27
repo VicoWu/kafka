@@ -676,15 +676,16 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                 config.ignore(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG);
                 this.valueDeserializer = valueDeserializer;
             }
-            this.fetcher = new Fetcher<>(this.client,
-                    config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),
-                    config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),
+            this.fetcher = new Fetcher<>(this.client,//网络连接客户端
+                    config.getInt(ConsumerConfig.FETCH_MIN_BYTES_CONFIG),//服务端数据必须积累到FETCH_MIN_BYTES_CONFIG才响应，以提高网路的有效负载
+                    config.getInt(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG),//最长等待时间，服务端根据这个参数决定什么时候响应
+                    //服务器端可能返回的单个partition的最大消息大小，这个数目必须大于服务器端允许的最大消息体积，因为，如果小于的话，在某些极端情况下，有可能服务器端返回的数据只属于某一个partitiion，并且大于这个配置值，因此发生问题
                     config.getInt(ConsumerConfig.MAX_PARTITION_FETCH_BYTES_CONFIG),
-                    config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG),
+                    config.getInt(ConsumerConfig.MAX_POLL_RECORDS_CONFIG),//最大消费消息的记录数
                     config.getBoolean(ConsumerConfig.CHECK_CRCS_CONFIG),
                     this.keyDeserializer,
                     this.valueDeserializer,
-                    this.metadata,
+                    this.metadata,//在调用了KafkaConsumer.subcribe()以后，metadata中保存了所订阅的topic的信息
                     this.subscriptions,
                     metrics,
                     metricGrpPrefix,
@@ -946,8 +947,8 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                     // NOTE: since the consumed position has already been updated, we must not allow
                     // wakeups or any other errors to be triggered prior to returning the fetched records.
                     // Additionally, pollNoWakeup does not allow automatic commits to get triggered.
-                    fetcher.sendFetches();
-                    client.pollNoWakeup();
+                    fetcher.sendFetches();//在请求到数据以后，顺便发送下一次请求，由于请求是异步发送，因此并不会影响本次消息消费的效率
+                    client.pollNoWakeup();//发送一个poll请求，并且是立刻返回的，因为timeout=0
 
                     if (this.interceptors == null)
                         return new ConsumerRecords<>(records);
@@ -955,7 +956,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
                         return this.interceptors.onConsume(new ConsumerRecords<>(records));
                 }
 
-                long elapsed = time.milliseconds() - start;
+                long elapsed = time.milliseconds() - start;//计算剩余可用的时间
                 remaining = timeout - elapsed;
             } while (remaining > 0);
 
@@ -970,7 +971,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
      * heart-beating, auto-commits, and offset updates.
      * @param timeout The maximum time to block in the underlying poll
      * @return The fetched records (may be empty)
-     * 进行一次消费操作
+     * 进行一次消费操作，如果这次操作直接在fetcher已经存在，则直接返回这些已经完成的结果，而如果fetcher没有返回任何结果，则会强行进行一次poll操作。
      */
     private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollOnce(long timeout) {
         // TODO: Sub-requests should take into account the poll timeout (KAFKA-1894)
@@ -988,16 +989,17 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
         long now = time.milliseconds();
 
         // execute delayed tasks (e.g. autocommits and heartbeats) prior to fetching records
+        //执行heartbeat任务或者自动提交offset任务
         client.executeDelayedTasks(now);
 
         // init any new fetches (won't resend pending fetches)
-        Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
+        Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();//直接获取已经收到的数据
 
         // if data is available already, e.g. from a previous network client poll() call to commit,
         // then just return it immediately
         if (!records.isEmpty())
             return records;
-
+        //如果没有接收到任何一条消息，则真正地发送fetch请求
         fetcher.sendFetches();
         client.poll(timeout, now);
         return fetcher.fetchedRecords();
@@ -1373,6 +1375,7 @@ public class KafkaConsumer<K, V> implements Consumer<K, V> {
     /**
      * Wakeup the consumer. This method is thread-safe and is useful in particular to abort a long poll.
      * The thread which is blocking in an operation will throw {@link org.apache.kafka.common.errors.WakeupException}.
+     * 在特定情况下唤醒一个长时间的poll请求
      */
     @Override
     public void wakeup() {

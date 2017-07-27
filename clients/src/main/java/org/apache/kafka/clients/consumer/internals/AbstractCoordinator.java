@@ -334,6 +334,7 @@ public abstract class AbstractCoordinator implements Closeable {
                 metadata());
 
         log.debug("Sending JoinGroup ({}) to coordinator {}", request, this.coordinator);
+        // ConsumerNetworkClient.send会将请求放到unsend中
         return client.send(coordinator, ApiKeys.JOIN_GROUP, request)
                 .compose(new JoinGroupResponseHandler());//适配器模式
     }
@@ -428,6 +429,7 @@ public abstract class AbstractCoordinator implements Closeable {
     private RequestFuture<ByteBuffer> sendSyncGroupRequest(SyncGroupRequest request) {
         if (coordinatorUnknown())
             return RequestFuture.coordinatorNotAvailable();
+        // ConsumerNetworkClient.send会将请求放到unsend中
         return client.send(coordinator, ApiKeys.SYNC_GROUP, request)
                 .compose(new SyncGroupResponseHandler());
     }
@@ -490,6 +492,7 @@ public abstract class AbstractCoordinator implements Closeable {
             log.debug("Sending coordinator request for group {} to broker {}", groupId, node);
             //在请求中封装groupId
             GroupCoordinatorRequest metadataRequest = new GroupCoordinatorRequest(this.groupId);
+            // ConsumerNetworkClient.send会将请求放到unsend中
             return client.send(node, ApiKeys.GROUP_COORDINATOR, metadataRequest)
                     .compose(new RequestFutureAdapter<ClientResponse, Void>() {
                         @Override
@@ -516,6 +519,8 @@ public abstract class AbstractCoordinator implements Closeable {
             // use MAX_VALUE - node.id as the coordinator id to mimic separate connections
             // for the coordinator in the underlying network client layer
             // TODO: this needs to be better handled in KAFKA-1935
+            //设置coordinator所在的节点ID为Integer.MAX_VALUE - groupCoordinatorResponse.node().id()，目的是为了
+            //能够将于coordinator之间的连接和与节点之间的连接区别开，分别建立各自独立的socket连接。
             Errors error = Errors.forCode(groupCoordinatorResponse.errorCode());
             if (error == Errors.NONE) {
                 this.coordinator = new Node(Integer.MAX_VALUE - groupCoordinatorResponse.node().id(),
@@ -524,7 +529,7 @@ public abstract class AbstractCoordinator implements Closeable {
 
                 log.info("Discovered coordinator {} for group {}.", coordinator, groupId);
 
-                client.tryConnect(coordinator);
+                client.tryConnect(coordinator);//尝试连接到coordinator
 
                 // start sending heartbeats only if we have a valid generation
                 if (generation > 0)
@@ -592,6 +597,7 @@ public abstract class AbstractCoordinator implements Closeable {
     }
 
     private void sendLeaveGroupRequest() {
+    	 // ConsumerNetworkClient.send会将请求放到unsend中
         LeaveGroupRequest request = new LeaveGroupRequest(groupId, memberId);
         RequestFuture<Void> future = client.send(coordinator, ApiKeys.LEAVE_GROUP, request)
                 .compose(new LeaveGroupResponseHandler());
@@ -631,6 +637,7 @@ public abstract class AbstractCoordinator implements Closeable {
      */
     public RequestFuture<Void> sendHeartbeatRequest() {
         HeartbeatRequest req = new HeartbeatRequest(this.groupId, this.generation, this.memberId);
+        // ConsumerNetworkClient.send会将请求放到unsend中
         return client.send(coordinator, ApiKeys.HEARTBEAT, req)
                 .compose(new HeartbeatCompletionHandler());
     }

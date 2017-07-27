@@ -153,7 +153,7 @@ public class NetworkClient implements KafkaClient {
             throw new IllegalArgumentException("Cannot connect to empty node " + node);
 
         if (isReady(node, now))
-            return true;
+            return true;//已经建立了连接
 
         if (connectionStates.canConnect(node.idString(), now))
             // if we are interested in sending to a node and we don't have a connection to it, initiate one
@@ -240,11 +240,11 @@ public class NetworkClient implements KafkaClient {
         doSend(request, now);
     }
 
-    //doSend并不真的执行发送，而是组装发送请求
+    //真正发送请求
     private void doSend(ClientRequest request, long now) {
         request.setSendTimeMs(now);
         this.inFlightRequests.add(request);
-        selector.send(request.request());
+        selector.send(request.request());//查看Selector.send，发现请求只是放到缓存，并不是现在发送
     }
 
     /**

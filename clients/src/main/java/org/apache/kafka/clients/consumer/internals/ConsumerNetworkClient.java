@@ -210,7 +210,7 @@ public class ConsumerNetworkClient implements Closeable {
      * nor will it execute any delayed tasks.
      */
     public void pollNoWakeup() {
-        disableWakeups();//不可以被中断
+        disableWakeups();//不可以被中断，即拒绝对中断标记位做响应
         try {
             poll(0, time.milliseconds(), false);
         } finally {
@@ -220,12 +220,12 @@ public class ConsumerNetworkClient implements Closeable {
 
     private void poll(long timeout, long now, boolean executeDelayedTasks) {
         // send all the requests we can send now
-        trySend(now);//发送消息，其实只是将待发送消息进行设置，并不进行发送
+        trySend(now);//发送所有的unsend消息，其实只是将待发送消息进行设置，并不进行发送
 
         // ensure we don't poll any longer than the deadline for
         // the next scheduled task
         timeout = Math.min(timeout, delayedTasks.nextTimeout(now));
-        clientPoll(timeout, now);
+        clientPoll(timeout, now);//真正地拉取数据
         now = time.milliseconds();
 
         // handle any disconnects by failing the active requests. note that disconnects must
@@ -236,7 +236,7 @@ public class ConsumerNetworkClient implements Closeable {
 
         // execute scheduled tasks
         if (executeDelayedTasks)
-            delayedTasks.poll(now);
+            delayedTasks.poll(now);//取出并执行到达执行时间的任务，比如，心跳任务等
 
         // try again to send requests since buffer space may have been
         // cleared or a connect finished in the poll
@@ -359,8 +359,8 @@ public class ConsumerNetworkClient implements Closeable {
             while (iterator.hasNext()) {
                 ClientRequest request = iterator.next();
                 if (client.ready(node, now)) {
-                    client.send(request, now);
-                    iterator.remove();
+                    client.send(request, now);//NetworkClient.send()是真正执行发送，并不是先放到unsent中
+                    iterator.remove();//从unsent中删除这个请求
                     requestsSent = true;
                 }
             }
@@ -378,7 +378,7 @@ public class ConsumerNetworkClient implements Closeable {
     private void maybeTriggerWakeup() {
     	//wakeup设置为true表示有除去consumer线程以外的线程希望停止poll，只有除去consumer之外的线程
     	//会把wakeup置为true
-        if (wakeupDisabledCount == 0 && wakeup.get()) {
+        if (wakeupDisabledCount == 0 && wakeup.get()) {//检测是否收到了主线程以外的线程的wakeup，如果有，则抛出WakeupException代表被唤醒
             wakeup.set(false);
             throw new WakeupException();
         }
@@ -392,12 +392,12 @@ public class ConsumerNetworkClient implements Closeable {
         if (wakeupDisabledCount <= 0)
             throw new IllegalStateException("Cannot enable wakeups since they were never disabled");
 
-        wakeupDisabledCount--;
+        wakeupDisabledCount--;//每个不可中断
 
         // re-wakeup the client if the flag was set since previous wake-up call
         // could be cleared by poll(0) while wakeups were disabled
-        if (wakeupDisabledCount == 0 && wakeup.get())
-            this.client.wakeup();
+        if (wakeupDisabledCount == 0 && wakeup.get())//如果当前已经没有线程正在disableWakeup,并且，wakeup=true,即有另外的线程企图让当前线程被唤醒
+            this.client.wakeup();//如果多个线程N此调用disableWakeups，则必须调用N次enableWakeups才会真正唤醒
     }
 
     @Override

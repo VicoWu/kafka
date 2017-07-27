@@ -21,7 +21,7 @@ package org.apache.kafka.common.protocol;
  */
 public enum ApiKeys {
     PRODUCE(0, "Produce"),
-    FETCH(1, "Fetch"),
+    FETCH(1, "Fetch"),//消费消息时获取数据的请求
     LIST_OFFSETS(2, "Offsets"),
     METADATA(3, "Metadata"),
     LEADER_AND_ISR(4, "LeaderAndIsr"),

@@ -73,6 +73,7 @@ public class DelayedTaskQueue {
      * @param now the current time
      */
     public void poll(long now) {
+    	//tasks.peek().timeout <= now代表这个任务已经到达执行时间，可以执行
         while (!tasks.isEmpty() && tasks.peek().timeout <= now) {
             Entry entry = tasks.poll();
             entry.task.run(now);
@@ -85,7 +86,7 @@ public class DelayedTaskQueue {
 
         public Entry(DelayedTask task, long timeout) {
             this.task = task;
-            this.timeout = timeout;
+            this.timeout = timeout;//执行时间
         }
 
         @Override

@@ -127,6 +127,7 @@ public class Fetcher<K, V> {
     public void sendFetches() {
         for (Map.Entry<Node, FetchRequest> fetchEntry: createFetchRequests().entrySet()) {
             final FetchRequest request = fetchEntry.getValue();
+            //ConsumerNetworkClient.send会将请求放到unsend中
             client.send(fetchEntry.getKey(), ApiKeys.FETCH, request)
                     .addListener(new RequestFutureListener<ClientResponse>() {
                         @Override
@@ -275,6 +276,7 @@ public class Fetcher<K, V> {
         if (node == null)
             return RequestFuture.noBrokersAvailable();
         else
+        	 // ConsumerNetworkClient.send会将请求放到unsend中
             return client.send(node, ApiKeys.METADATA, request);
     }
 
@@ -337,14 +339,14 @@ public class Fetcher<K, V> {
      *         the defaultResetPolicy is NONE
      */
     public Map<TopicPartition, List<ConsumerRecord<K, V>>> fetchedRecords() {
-        if (this.subscriptions.partitionAssignmentNeeded()) {
+        if (this.subscriptions.partitionAssignmentNeeded()) {//是否需要重新进行分区分配
             return Collections.emptyMap();
         } else {
             Map<TopicPartition, List<ConsumerRecord<K, V>>> drained = new HashMap<>();
             int recordsRemaining = maxPollRecords;
             Iterator<CompletedFetch> completedFetchesIterator = completedFetches.iterator();
 
-            while (recordsRemaining > 0) {
+            while (recordsRemaining > 0) {//计算剩余可以poll的消息量
                 if (nextInLineRecords == null || nextInLineRecords.isEmpty()) {
                     if (!completedFetchesIterator.hasNext())
                         break;
@@ -427,6 +429,7 @@ public class Fetcher<K, V> {
         } else {
             Node node = info.leader();
             ListOffsetRequest request = new ListOffsetRequest(-1, partitions);
+            // ConsumerNetworkClient.send会将请求放到unsend中
             return client.send(node, ApiKeys.LIST_OFFSETS, request)
                     .compose(new RequestFutureAdapter<ClientResponse, Long>() {
                         @Override
@@ -479,16 +482,19 @@ public class Fetcher<K, V> {
     /**
      * Create fetch requests for all nodes for which we have assigned partitions
      * that have no existing requests in flight.
+     * 创建fetch请求，这个请求的key是node，value是一个FetchRequest对象，这个对象封装了对这个节点上的一个或者多个TopicPartition的数据获取请求
      */
     private Map<Node, FetchRequest> createFetchRequests() {
         // create the fetch info
         Cluster cluster = metadata.fetch();
+        //feat
         Map<Node, Map<TopicPartition, FetchRequest.PartitionData>> fetchable = new HashMap<>();
-        for (TopicPartition partition : fetchablePartitions()) {
-            Node node = cluster.leaderFor(partition);
+        
+        for (TopicPartition partition : fetchablePartitions()) {//对于每一个partition
+            Node node = cluster.leaderFor(partition);//查看这个partition的leader节点
             if (node == null) {
-                metadata.requestUpdate();
-            } else if (this.client.pendingRequestCount(node) == 0) {
+                metadata.requestUpdate();//node是空，则重新更新元数据
+            } else if (this.client.pendingRequestCount(node) == 0) {//如果这个节点上的pending请求为0,pending既包括in-flight，也包括unsent
                 // if there is a leader and no in-flight requests, issue a new fetch
                 Map<TopicPartition, FetchRequest.PartitionData> fetch = fetchable.get(node);
                 if (fetch == null) {
@@ -497,7 +503,7 @@ public class Fetcher<K, V> {
                 }
 
                 long position = this.subscriptions.position(partition);
-                fetch.put(partition, new FetchRequest.PartitionData(position, this.fetchSize));
+                fetch.put(partition, new FetchRequest.PartitionData(position, this.fetchSize));//将每个partition的请求保存
                 log.trace("Added fetch request for partition {} at offset {}", partition, position);
             }
         }
