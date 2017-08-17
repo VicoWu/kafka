@@ -505,7 +505,7 @@ public class NetworkClient implements KafkaClient {
             selector.connect(nodeConnectionId,
                              new InetSocketAddress(node.host(), node.port()),
                              this.socketSendBuffer,
-                             this.socketReceiveBuffer);
+                             this.socketReceiveBuffer); 
         } catch (IOException e) {
             /* attempt failed, we'll try again after the backoff */
             connectionStates.disconnected(nodeConnectionId, now);

@@ -221,8 +221,8 @@ object KafkaConfig {
   val SocketSendBufferBytesProp = "socket.send.buffer.bytes"
   val SocketReceiveBufferBytesProp = "socket.receive.buffer.bytes"
   val SocketRequestMaxBytesProp = "socket.request.max.bytes"
-  val MaxConnectionsPerIpProp = "max.connections.per.ip"
-  val MaxConnectionsPerIpOverridesProp = "max.connections.per.ip.overrides"
+  val MaxConnectionsPerIpProp = "max.connections.per.ip"//单个IP上的最大连接数，用来给ConnectionQuotas控制连接数
+  val MaxConnectionsPerIpOverridesProp = "max.connections.per.ip.overrides"//单个IP上的最大连接数，用来给ConnectionQuotas控制连接数，并且可以指定某个IP的最大连接数,会覆盖max.connections.per.ip的值
   val ConnectionsMaxIdleMsProp = "connections.max.idle.ms"
   /***************** rack configuration *************/
   val RackProp = "broker.rack"

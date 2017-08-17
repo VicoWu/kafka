@@ -137,6 +137,7 @@ public class Selector implements Selectable {
     }
 
     /**
+     * 客户端创建了Selector对象以后，会通过这个方法建立同远程Server的连接
      * Begin connecting to the given address and add the connection to this nioSelector associated with the given id
      * number.
      * <p>
@@ -149,11 +150,13 @@ public class Selector implements Selectable {
      * @throws IllegalStateException if there is already a connection for that id
      * @throws IOException if DNS resolution fails on the hostname or if the broker is down
      */
+    
     @Override
     public void connect(String id, InetSocketAddress address, int sendBufferSize, int receiveBufferSize) throws IOException {
         if (this.channels.containsKey(id))
             throw new IllegalStateException("There is already a connection for id " + id);
 
+        //SocketChannel只是一个抽象类，跟踪java内核代码，可以看到SocketChannel的具体运行时类是@Code sun.nio.ch.SocketChannelImpl
         SocketChannel socketChannel = SocketChannel.open();
         socketChannel.configureBlocking(false);
         Socket socket = socketChannel.socket();
@@ -165,6 +168,7 @@ public class Selector implements Selectable {
         socket.setTcpNoDelay(true);
         boolean connected;
         try {
+        	//在non-blocking 模式下，connect()方法返回false只能代表不知道连接是否成功，因为有可能连接正在进行
             connected = socketChannel.connect(address);
         } catch (UnresolvedAddressException e) {
             socketChannel.close();
@@ -173,18 +177,19 @@ public class Selector implements Selectable {
             socketChannel.close();
             throw e;
         }
-      //在这个channelz注册到selector上，关注OP_CONNECT事件
+        //在这个channelz注册到selector上，关注OP_CONNECT事件
+        //一个key对象就代表了这次注册
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_CONNECT);
       //默认情况下是PlaintextChannelBuilder
         KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
         key.attach(channel);
         this.channels.put(id, channel);
-
+        //如果已经知道连接建立了，则直接将这个key添加到immediatelyConnectedKeys中，代表已经建立连接的key,后续poll()中就不需要通过
         if (connected) {
             // OP_CONNECT won't trigger for immediately connected channels
             log.debug("Immediately connected to node {}", channel.id());
             immediatelyConnectedKeys.add(key);
-            key.interestOps(0);//0代表对任何key都不感兴趣
+            key.interestOps(0);//0代表对任何key都不感兴趣，这只是暂时的
         }
     }
 
@@ -195,9 +200,10 @@ public class Selector implements Selectable {
      */
     public void register(String id, SocketChannel socketChannel) throws ClosedChannelException {
         SelectionKey key = socketChannel.register(nioSelector, SelectionKey.OP_READ);
-        KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);
-        key.attach(channel);
-        this.channels.put(id, channel);
+        //如果是SocketServer创建的这个对象并且是纯文本，则channelBuilder是@Code PlainTextChannelBuilder
+        KafkaChannel channel = channelBuilder.buildChannel(id, key, maxReceiveSize);//构造一个KafkaChannel
+        key.attach(channel);//将KafkaChannel对象attach到这个registration，以后可以通过调用SelectionKey.attachment()获得这个对象
+        this.channels.put(id, channel);//记录这个Channel
     }
 
     /**
@@ -269,6 +275,7 @@ public class Selector implements Selectable {
         if (timeout < 0)
             throw new IllegalArgumentException("timeout should be >= 0");
 
+        //在poll之前，会清空CompletesSends等等队列，这意味着，该方法的调用是不可重复的，每次poll出来的请求，都必须处理，否则下一次poll进行的时候这些结果就会丢失
         clear();
 
         if (hasStagedReceives() || !immediatelyConnectedKeys.isEmpty())
@@ -280,25 +287,32 @@ public class Selector implements Selectable {
         long endSelect = time.nanoseconds();
         currentTimeNanos = endSelect;
         this.sensors.selectTime.record(endSelect - startSelect, time.milliseconds());
-      //如果存在已经准备好的keys
+        //如果存在已经准备好的keys
         if (readyKeys > 0 || !immediatelyConnectedKeys.isEmpty()) {
+        	//nioSelector.selectedKeys()是已经准备就绪的通道对应的选择键，是keys的子集
             pollSelectionKeys(this.nioSelector.selectedKeys(), false);
             pollSelectionKeys(immediatelyConnectedKeys, true);
         }
 
-        addToCompletedReceives();
+        addToCompletedReceives();//将已经完成的read请求添加到completedReceived
 
         long endIo = time.nanoseconds();
         this.sensors.ioTime.record(endIo - endSelect, time.milliseconds());
         maybeCloseOldestConnection();
     }
 
+    /**
+     * 对于每一个selectionKey，从这个key中取出attach到这个key上面的KafkaChannel，channel的状态迁移时从未连接、建立连接未认证、已经认证、
+     * 
+     * @param selectionKeys
+     * @param isImmediatelyConnected
+     */
     private void pollSelectionKeys(Iterable<SelectionKey> selectionKeys, boolean isImmediatelyConnected) {
         Iterator<SelectionKey> iterator = selectionKeys.iterator();
         while (iterator.hasNext()) {
             SelectionKey key = iterator.next();
             iterator.remove();
-            KafkaChannel channel = channel(key);
+            KafkaChannel channel = channel(key);//取出attach到这个key上面的KafkaChannel,注意，一个Channel只可以attach一个channel
 
             // register all per-connection metrics at once
             sensors.maybeRegisterConnectionMetrics(channel.id());
@@ -307,12 +321,12 @@ public class Selector implements Selectable {
             try {
 
                 /* complete any connections that have finished their handshake (either normally or immediately) */
-                if (isImmediatelyConnected || key.isConnectable()) {
-                    if (channel.finishConnect()) {
+                if (isImmediatelyConnected || key.isConnectable()) {  
+                    if (channel.finishConnect()) {//这个channel的连接已经建立完成
                         this.connected.add(channel.id());
                         this.sensors.connectionCreated.record();
                     } else
-                        continue;
+                        continue;//这个channel的连接尚未建立，则忽略，继续遍历下一个key
                 }
 
                 /* if channel is not ready finish prepare */
@@ -321,17 +335,22 @@ public class Selector implements Selectable {
                     channel.prepare();
 
                 /* if channel is ready read from any connections that have readable data */
+                //hasStagedReceive(channel)代表这个channel已经进行过读取操作，读取到的对象放入stagedReceives中
                 if (channel.ready() && key.isReadable() && !hasStagedReceive(channel)) {
-                	//通过KafkaChannel.read()的代码可以看到，如果返回null，代表这个channel没有读完
                 	NetworkReceive networkReceive;
+                	//通过KafkaChannel.read()的代码可以看到，如果返回null，代表这个channel没有读完,根据 poll()方法的注释，基于SSL加密的信息，无法只读取一部分，只能或者一次性全部读出，或者全都不读，即SSL消息与纯文本消息不同，不可拼接
                     while ((networkReceive = channel.read()) != null)
                     	//将channel和对应的收到的响应放入stagedReceives中，每一个channel对应一个List<networkReceive>
+                    	 //每执行一次channel.read()，都会把读取到的部分对象封装为NetworkReceive对象，添加到这个channel对应的队列中去
                         addToStagedReceives(channel, networkReceive);
+                    
+                    //当跳出循环，则stagedReceives中实际上保存着已经完成的read
                 }
+                
 
                 /* if channel is ready write to any sockets that have space in their buffer and for which we have data */
                 if (channel.ready() && key.isWritable()) {
-                    Send send = channel.write();
+                    Send send = channel.write();//进行真正的写操作。
                     if (send != null) {//send!=null代表发送完成
                         this.completedSends.add(send);
                         this.sensors.recordBytesSent(channel.id(), send.size());
@@ -339,7 +358,7 @@ public class Selector implements Selectable {
                 }
 
                 /* cancel any defunct sockets */
-                if (!key.isValid()) {
+                if (!key.isValid()) {//如果这个key已经不可用了，则把这个channel添加到disconnected中去
                     close(channel);
                     this.disconnected.add(channel.id());
                 }
@@ -449,6 +468,13 @@ public class Selector implements Selectable {
      * @throws IllegalArgumentException
      * @throws IOException
      */
+    /**
+     * 在自己内部封装的java.nio.channels.Selector上选择出一个已经存在等待好好读写的channel的key，超时时间是ms
+     * 
+     * @param ms
+     * @return
+     * @throws IOException
+     */
     private int select(long ms) throws IOException {
         if (ms < 0L)
             throw new IllegalArgumentException("timeout should be >= 0");
@@ -554,20 +580,21 @@ public class Selector implements Selectable {
 
     /**
      * checks if there are any staged receives and adds to completedReceives
+     * 遍历stagedReceives并添加到completedReceives中
      */
     private void addToCompletedReceives() {
-        if (!this.stagedReceives.isEmpty()) {
+        if (!this.stagedReceives.isEmpty()) {//如果读取操作存在中间结果
             Iterator<Map.Entry<KafkaChannel, Deque<NetworkReceive>>> iter = this.stagedReceives.entrySet().iterator();
-            while (iter.hasNext()) {
+            while (iter.hasNext()) {//迭代这些中间结果
                 Map.Entry<KafkaChannel, Deque<NetworkReceive>> entry = iter.next();
                 KafkaChannel channel = entry.getKey();
                 if (!channel.isMute()) {
-                    Deque<NetworkReceive> deque = entry.getValue();
+                    Deque<NetworkReceive> deque = entry.getValue();//这个channel已经接收到的数据
                     NetworkReceive networkReceive = deque.poll();
                     this.completedReceives.add(networkReceive);
                     this.sensors.recordBytesReceived(channel.id(), networkReceive.payload().limit());
                     if (deque.isEmpty())
-                        iter.remove();
+                        iter.remove();//同时从stagedReceived中删除
                 }
             }
         }

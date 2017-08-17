@@ -33,7 +33,9 @@ import org.apache.kafka.common.requests.{RequestSend, ProduceRequest, AbstractRe
 import org.apache.kafka.common.security.auth.KafkaPrincipal
 import org.apache.log4j.Logger
 
-
+/**
+ * RequestChannel是Processor和Handler之间进行通信的中间件，
+ */
 object RequestChannel extends Logging {
   val AllDone = new Request(processor = 1, connectionId = "2", new Session(KafkaPrincipal.ANONYMOUS, InetAddress.getLocalHost()), buffer = getShutdownReceive(), startTimeMs = 0, securityProtocol = SecurityProtocol.PLAINTEXT)
 
@@ -179,8 +181,9 @@ object RequestChannel extends Logging {
 class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
+  //每一个processer对应一个responseQueue,每个responseQueue对应了多个Response
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
-  for(i <- 0 until numProcessors)
+  for(i <- 0 until numProcessors) //初始化responseQueues
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()
 
   newGauge(
@@ -204,6 +207,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
   }
 
   /** Send a request to be handled, potentially blocking until there is room in the queue for the request */
+  
   def sendRequest(request: RequestChannel.Request) {
     requestQueue.put(request)
   }
@@ -212,7 +216,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
   def sendResponse(response: RequestChannel.Response) {
     responseQueues(response.processor).put(response)
     for(onResponse <- responseListeners)
-      onResponse(response.processor)
+      onResponse(response.processor)//服务端的响应回调方法
   }
 
   /** No operation to take for the request, need to read more over the network */
@@ -238,6 +242,7 @@ class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMe
     requestQueue.take()
 
   /** Get a response for the given processor if there is one */
+  //真个Processor数组和responseQueues数组大小相同，processors[index]的process负责responseQueues[index]这个responseQueue
   def receiveResponse(processor: Int): RequestChannel.Response = {
     val response = responseQueues(processor).poll()
     if (response != null)

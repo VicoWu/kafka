@@ -378,6 +378,11 @@ public class SubscriptionState {
         return isAssigned(tp) && assignedState(tp).paused;
     }
 
+    /**
+     * 当且仅当1.这个分区的确是分派给这个consumer 2当前不是pause状态 3.当前存在合法的分区位置，这个分区才会是fetchable
+     * @param tp
+     * @return
+     */
     public boolean isFetchable(TopicPartition tp) {
         return isAssigned(tp) && assignedState(tp).isFetchable();
     }
@@ -399,6 +404,7 @@ public class SubscriptionState {
     }
 
     private static class TopicPartitionState {
+    	//注意，在Fetcher.append()方法里面可以看到，这个position保存的是下一条即将消费的消息，而不是当前已经消费的消费的最后一条消息
         private Long position; // last consumed position
         private OffsetAndMetadata committed;  // last committed position
         private boolean paused;  // whether this partition has been paused by the user

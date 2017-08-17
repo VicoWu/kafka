@@ -213,7 +213,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
       producer = new MirrorMakerProducer(producerProps)
 
       // Create consumers
-      val mirrorMakerConsumers = if (!useNewConsumer) {
+      val mirrorMakerConsumers = if (!useNewConsumer) {//如果用户没有配置使用new consumer，则使用旧的consumer
         val customRebalanceListener = {
           val customRebalanceListenerClass = options.valueOf(consumerRebalanceListenerOpt)
           if (customRebalanceListenerClass != null) {
@@ -230,13 +230,13 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
 
         if (customRebalanceListener.exists(!_.isInstanceOf[ConsumerRebalanceListener]))
           throw new IllegalArgumentException("The rebalance listener should be an instance of kafka.consumer.ConsumerRebalanceListener")
-        createOldConsumers(
+        createOldConsumers(//创建旧的consumer
           numStreams,
           options.valueOf(consumerConfigOpt),
           customRebalanceListener,
           Option(options.valueOf(whitelistOpt)),
           Option(options.valueOf(blacklistOpt)))
-      } else {
+      } else {//用户指定使用new  consumer
         val customRebalanceListener = {
           val customRebalanceListenerClass = options.valueOf(consumerRebalanceListenerOpt)
           if (customRebalanceListenerClass != null) {
@@ -253,7 +253,7 @@ object MirrorMaker extends Logging with KafkaMetricsGroup {
         if (customRebalanceListener.exists(!_.isInstanceOf[org.apache.kafka.clients.consumer.ConsumerRebalanceListener]))
           throw new IllegalArgumentException("The rebalance listener should be an instance of" +
             "org.apache.kafka.clients.consumer.ConsumerRebalanceListner")
-        createNewConsumers(
+        createNewConsumers(//创建new consumer
           numStreams,
           options.valueOf(consumerConfigOpt),
           customRebalanceListener,
