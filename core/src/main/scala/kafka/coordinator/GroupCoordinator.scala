@@ -47,7 +47,7 @@ case class JoinGroupResult(members: Map[String, Array[Byte]],
  * Each Kafka server instantiates a coordinator which is responsible for a set of
  * groups. Groups are assigned to coordinators based on their group names.
  */
-class GroupCoordinator(val brokerId: Int,
+class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoordinator对象，负责管理全部ConsumerGroup的一个子集
                        val groupConfig: GroupConfig,
                        val offsetConfig: OffsetConfig,
                        val groupManager: GroupMetadataManager,
@@ -714,6 +714,9 @@ class GroupCoordinator(val brokerId: Int,
   private def isCoordinatorLoadingInProgress(groupId: String) = groupManager.isGroupLoading(groupId)
 }
 
+/**
+  * 在KafkaServer的构造方法中被调用
+ */
 object GroupCoordinator {
 
   val NoState = ""
@@ -752,6 +755,7 @@ object GroupCoordinator {
     val groupConfig = GroupConfig(groupMinSessionTimeoutMs = config.groupMinSessionTimeoutMs,
       groupMaxSessionTimeoutMs = config.groupMaxSessionTimeoutMs)
 
+    //构造GroupMetadataManager对象，用来记录和管理消费者的元数据
     val groupMetadataManager = new GroupMetadataManager(config.brokerId, offsetConfig, replicaManager, zkUtils, time)
     new GroupCoordinator(config.brokerId, groupConfig, offsetConfig, groupMetadataManager, heartbeatPurgatory, joinPurgatory, time)
   }

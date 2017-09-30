@@ -130,7 +130,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
   val kafkaScheduler = new KafkaScheduler(config.backgroundThreads)
 
   var kafkaHealthcheck: KafkaHealthcheck = null
-  val metadataCache: MetadataCache = new MetadataCache(config.brokerId)
+  val metadataCache: MetadataCache = new MetadataCache(config.brokerId) //每一个broker上都有一个MetadataCache对象，用来缓存这个机器上所有的partition的元数据信息
 
   var zkUtils: ZkUtils = null
   val correlationId: AtomicInteger = new AtomicInteger(0)
@@ -200,7 +200,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         kafkaController.startup()
 
         /* start group coordinator */
-        groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)
+        groupCoordinator = GroupCoordinator(config, zkUtils, replicaManager, kafkaMetricsTime)//构造GroupCoordinator对象，负责对group进行管理
         groupCoordinator.startup()
 
         /* Get the authorizer and initialize it if one is specified.*/
@@ -213,6 +213,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = SystemTime, threadNamePr
         /* start processing requests */
         apis = new KafkaApis(socketServer.requestChannel, replicaManager, groupCoordinator,
           kafkaController, zkUtils, config.brokerId, config, metadataCache, metrics, authorizer)
+         //KafkaRequestHandlerPool线程池，用来管理所有KafkaRequestHandler线程
         requestHandlerPool = new KafkaRequestHandlerPool(config.brokerId, socketServer.requestChannel, apis, config.numIoThreads)
         brokerState.newState(RunningAsBroker)
 

@@ -180,8 +180,9 @@ object RequestChannel extends Logging {
 
 class RequestChannel(val numProcessors: Int, val queueSize: Int) extends KafkaMetricsGroup {
   private var responseListeners: List[(Int) => Unit] = Nil
+  //request存放了所有Processor接收到的远程请求，负责把requestQueue中的请求交付给具体业务逻辑进行处理
   private val requestQueue = new ArrayBlockingQueue[RequestChannel.Request](queueSize)
-  //每一个processer对应一个responseQueue,每个responseQueue对应了多个Response
+  //responseQueues存放了所有Processor的带出来的response，即每一个Processor都有一个response queue
   private val responseQueues = new Array[BlockingQueue[RequestChannel.Response]](numProcessors)
   for(i <- 0 until numProcessors) //初始化responseQueues
     responseQueues(i) = new LinkedBlockingQueue[RequestChannel.Response]()

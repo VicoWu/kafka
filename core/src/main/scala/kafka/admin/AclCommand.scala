@@ -25,6 +25,7 @@ import org.apache.kafka.common.utils.Utils
 
 import scala.collection.JavaConverters._
 
+import kafka.cluster.Partition;
 object AclCommand {
 
   val Newline = scala.util.Properties.lineSeparator

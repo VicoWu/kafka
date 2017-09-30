@@ -134,13 +134,14 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
   def get(memberId: String) = members(memberId)
 
   def add(memberId: String, member: MemberMetadata) {
-    assert(supportsProtocols(member.protocols))
+    assert(supportsProtocols(member.protocols))//判断这个新加入的成员是否支撑当前这个group的PartitionAssignor
 
     if (leaderId == null)
-      leaderId = memberId
+      leaderId = memberId //如果当前还没有leader，那么当前加入进来的就是leader，就是这么霸气
     members.put(memberId, member)
   }
 
+  //删除成员并重新选举leader
   def remove(memberId: String) {
     members.remove(memberId)
     if (memberId == leaderId) {
@@ -185,14 +186,15 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
 
     // let each member vote for one of the protocols and choose the one with the most votes
     val votes: List[(String, Int)] = allMemberMetadata
-      .map(_.vote(candidates))
-      .groupBy(identity)
+      .map(_.vote(candidates))//查看这个member是否支持这个group中的protocol,map返回一个protocol的list，是每一个member通过vote()方法挑选出来的一个protocol
+      .groupBy(identity) //返回一个map，
       .mapValues(_.size)
       .toList
 
-    votes.maxBy(_._2)._1
+    votes.maxBy(_._2)._1 //取投票值最多的prototol
   }
 
+  //group中每个成员都支持的protocol协议的集合，
   private def candidateProtocols = {
     // get the set of protocols that are commonly supported by all members
     allMemberMetadata
@@ -240,4 +242,6 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
   override def toString = {
     "[%s,%s,%s,%s]".format(groupId, protocolType, currentState.toString, members)
   }
+
+
 }

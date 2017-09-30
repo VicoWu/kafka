@@ -38,6 +38,7 @@ import org.apache.kafka.common.requests.{MetadataResponse, PartitionState, Updat
  */
 private[server] class MetadataCache(brokerId: Int) extends Logging {
   private val stateChangeLogger = KafkaController.stateChangeLogger
+  //存放了各个partition的元数据信息，key是一个topic，value是一个map，这个map的key是parttitionId,value是PartitionStateInfo对象
   private val cache = mutable.Map[String, mutable.Map[Int, PartitionStateInfo]]()
   private var controllerId: Option[Int] = None
   private val aliveBrokers = mutable.Map[Int, Broker]()
@@ -68,9 +69,16 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
     }
 
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
+  /**
+    * 对于某一个topic，返回这个topic的所有partition信息的一个迭代器
+    * @param topic
+    * @param protocol
+    * @param errorUnavailableEndpoints
+    * @return
+    */
   private def getPartitionMetadata(topic: String, protocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Option[Iterable[MetadataResponse.PartitionMetadata]] = {
     cache.get(topic).map { partitions =>
-      partitions.map { case (partitionId, partitionState) =>
+      partitions.map { case (partitionId, partitionState) => //遍历每一个partition信息
         val topicPartition = TopicAndPartition(topic, partitionId)
 
         val leaderAndIsr = partitionState.leaderIsrAndControllerEpoch.leaderAndIsr
@@ -112,7 +120,7 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
   // errorUnavailableEndpoints exists to support v0 MetadataResponses
   def getTopicMetadata(topics: Set[String], protocol: SecurityProtocol, errorUnavailableEndpoints: Boolean = false): Seq[MetadataResponse.TopicMetadata] = {
     inReadLock(partitionMetadataLock) {
-      topics.toSeq.flatMap { topic =>
+      topics.toSeq.flatMap { topic => //经过flatMap操作，一个topic对应了多个MetadataResponse.TopicMetadata对象
         getPartitionMetadata(topic, protocol, errorUnavailableEndpoints).map { partitionMetadata =>
           new MetadataResponse.TopicMetadata(Errors.NONE, topic, Topic.isInternal(topic), partitionMetadata.toBuffer.asJava)
         }
@@ -144,6 +152,7 @@ private[server] class MetadataCache(brokerId: Int) extends Logging {
     }
   }
 
+  //添加或者删除partition的信息
   private def addOrUpdatePartitionInfo(topic: String,
                                        partitionId: Int,
                                        stateInfo: PartitionStateInfo) {

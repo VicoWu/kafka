@@ -278,6 +278,7 @@ public class Selector implements Selectable {
         //在poll之前，会清空CompletesSends等等队列，这意味着，该方法的调用是不可重复的，每次poll出来的请求，都必须处理，否则下一次poll进行的时候这些结果就会丢失
         clear();
 
+        //如果有stagedReceives，即上一次没有完成的stagedReceives，设置timeout=0，这时候select操作会立刻返回，以便处理上次没有处理完的receives
         if (hasStagedReceives() || !immediatelyConnectedKeys.isEmpty())
             timeout = 0;
 
@@ -338,7 +339,8 @@ public class Selector implements Selectable {
                 //hasStagedReceive(channel)代表这个channel已经进行过读取操作，读取到的对象放入stagedReceives中
                 if (channel.ready() && key.isReadable() && !hasStagedReceive(channel)) {
                 	NetworkReceive networkReceive;
-                	//通过KafkaChannel.read()的代码可以看到，如果返回null，代表这个channel没有读完,根据 poll()方法的注释，基于SSL加密的信息，无法只读取一部分，只能或者一次性全部读出，或者全都不读，即SSL消息与纯文本消息不同，不可拼接
+                	//通过KafkaChannel.read()的代码可以看到，如果返回null，代表这个channel没有读完
+                	//根据 poll()方法的注释，基于SSL加密的信息，无法只读取一部分，只能或者一次性全部读出，或者全都不读，即SSL消息与纯文本消息不同，不可拼接
                     while ((networkReceive = channel.read()) != null)
                     	//将channel和对应的收到的响应放入stagedReceives中，每一个channel对应一个List<networkReceive>
                     	 //每执行一次channel.read()，都会把读取到的部分对象封装为NetworkReceive对象，添加到这个channel对应的队列中去

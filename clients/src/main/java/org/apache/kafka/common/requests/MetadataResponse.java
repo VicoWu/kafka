@@ -319,6 +319,10 @@ public class MetadataResponse extends AbstractRequestResponse {
             return isInternal;
         }
 
+        /**
+         * 获取这个topic的所有partition的元数据信息，一个List<PartitionMetadata>
+         * @return
+         */
         public List<PartitionMetadata> partitionMetadata() {
             return partitionMetadata;
         }

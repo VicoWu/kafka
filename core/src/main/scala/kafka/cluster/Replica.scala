@@ -24,6 +24,14 @@ import kafka.common.KafkaException
 
 import java.util.concurrent.atomic.AtomicLong
 
+/**
+  * Replica对象代表了在某个broker上的某个TopicPartition的一个副本
+  * @param brokerId
+  * @param partition
+  * @param time
+  * @param initialHighWatermarkValue
+  * @param log
+  */
 class Replica(val brokerId: Int,
               val partition: Partition,
               time: Time = SystemTime,

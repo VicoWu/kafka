@@ -259,7 +259,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
   def run() {
     //向selector注册channel，可以接收ACCEPT事件，只有非阻塞的serverChannel才可以注册给Selector
     serverChannel.register(nioSelector, SelectionKey.OP_ACCEPT)
-    startupComplete() //启动完成的标记
+    startupComplete() //启动完成的标记,放在run()方法的第一行，说明当确认线程开始运行，则认为启动成功，启动过以后就是运行了
     try {
       var currentProcessor = 0
       while (isRunning) {///无限循环，持续等待OP_ACCEPT事件发生
@@ -277,7 +277,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
                 else
                   throw new IllegalStateException("Unrecognized key state for acceptor thread.")
 
-                // round robin to the next processor thread
+                //round-robin序号增1，下一个连接会取出下一个processor
                 currentProcessor = (currentProcessor + 1) % processors.length
               } catch {
                 case e: Throwable => error("Error while accepting connection", e)
@@ -329,7 +329,7 @@ private[kafka] class Acceptor(val endPoint: EndPoint,
    */
   def accept(key: SelectionKey, processor: Processor) {
     val serverSocketChannel = key.channel().asInstanceOf[ServerSocketChannel]//取出channel
-    val socketChannel = serverSocketChannel.accept()//创建socketChannel
+    val socketChannel = serverSocketChannel.accept()//创建socketChannel，专门负责与这个客户端的
     try {
       //增加connectionQuotas中的连接记录数
       connectionQuotas.inc(socketChannel.socket().getInetAddress)
@@ -477,7 +477,7 @@ private[kafka] class Processor(val id: Int,
       response.request.updateRequestMetrics()
     }
     else {
-      selector.send(response.responseSend)//将数据通过channel发送出去
+      selector.send(response.responseSend)//将数据通过channel发送出去,这里并没有真正发送数据
       inflightResponses += (response.request.connectionId -> response)
     }
   }
@@ -497,7 +497,7 @@ private[kafka] class Processor(val id: Int,
    * 将completedReceived中的对象进行封装，交付给requestQueue.completRequets
    */
   private def processCompletedReceives() {
-    selector.completedReceives.asScala.foreach { receive =>
+    selector.completedReceives.asScala.foreach { receive =>//每一个receive是一个NetworkReceivedui'xiagn
       try {
         //receive.source代表了这个请求的发送者的身份，KSelector保存了channel另一端的身份和对应的SocketChannel之间的对应关系
         val channel = selector.channel(receive.source)

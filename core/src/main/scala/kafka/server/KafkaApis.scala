@@ -52,7 +52,7 @@ import org.apache.kafka.common.requests.SaslHandshakeResponse
  */
 class KafkaApis(val requestChannel: RequestChannel,
                 val replicaManager: ReplicaManager,
-                val coordinator: GroupCoordinator,
+                val coordinator: GroupCoordinator,//一个KafakApis含有一个GroupCoordinator对象，代表其所在的Broker上的GroupCoordinator
                 val controller: KafkaController,
                 val zkUtils: ZkUtils,
                 val brokerId: Int,
@@ -83,7 +83,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
         case ApiKeys.OFFSET_COMMIT => handleOffsetCommitRequest(request)
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
-        case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request)
+        case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request) //客户端调用AbstractCoordinator.sendGroupCoordinatorRequest(),用来查询当前某个group的GroupCoordinator在哪儿
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
@@ -641,20 +641,29 @@ class KafkaApis(val requestChannel: RequestChannel,
     }
   }
 
+  /**
+    * 创建__consumer_offsets这个topic，发生在用户发送GROUP_COORDINATOR请求以后
+    * @return
+    */
   private def createGroupMetadataTopic(): MetadataResponse.TopicMetadata = {
     val aliveBrokers = metadataCache.getAliveBrokers
     val offsetsTopicReplicationFactor =
-      if (aliveBrokers.nonEmpty)
+      if (aliveBrokers.nonEmpty) //如果aliveBrokers不为空，那么offset topic的partition副本数是两者的较小值，即，副本书不可能比broker 的数量还高
         Math.min(config.offsetsTopicReplicationFactor.toInt, aliveBrokers.length)
       else
         config.offsetsTopicReplicationFactor.toInt
     createTopic(TopicConstants.GROUP_METADATA_TOPIC_NAME, config.offsetsTopicPartitions,
-      offsetsTopicReplicationFactor, coordinator.offsetsTopicConfigs)
+      offsetsTopicReplicationFactor, coordinator.offsetsTopicConfigs)//创建offset topic: __consumer_offsets
   }
 
+  /**
+    * 用户发送GROUP_COORDINATOR请求以后，会判断是否存在offset topic，如果存在就直接返回，不存在就创建
+    * @param securityProtocol
+    * @return
+    */
   private def getOrCreateGroupMetadataTopic(securityProtocol: SecurityProtocol): MetadataResponse.TopicMetadata = {
     val topicMetadata = metadataCache.getTopicMetadata(Set(TopicConstants.GROUP_METADATA_TOPIC_NAME), securityProtocol)
-    topicMetadata.headOption.getOrElse(createGroupMetadataTopic())
+    topicMetadata.headOption.getOrElse(createGroupMetadataTopic())//如果topicMetadata.headOption存在，则不创建，不存在则调用createGroupMetadataTopic()进行创建
   }
 
   private def getTopicMetadata(topics: Set[String], securityProtocol: SecurityProtocol, errorUnavailableEndpoints: Boolean): Seq[MetadataResponse.TopicMetadata] = {
@@ -804,6 +813,11 @@ class KafkaApis(val requestChannel: RequestChannel,
     requestChannel.sendResponse(new Response(request, new ResponseSend(request.connectionId, responseHeader, offsetFetchResponse)))
   }
 
+  /**
+    * 查询某一个group的group cordinator所在的brokerid等元数据信息
+    * 如果发现offset topic不存在，就创建offset topic
+    * @param request
+    */
   def handleGroupCoordinatorRequest(request: RequestChannel.Request) {
     val groupCoordinatorRequest = request.body.asInstanceOf[GroupCoordinatorRequest]
     val responseHeader = new ResponseHeader(request.header.correlationId)
@@ -812,17 +826,18 @@ class KafkaApis(val requestChannel: RequestChannel,
       val responseBody = new GroupCoordinatorResponse(Errors.GROUP_AUTHORIZATION_FAILED.code, Node.noNode)
       requestChannel.sendResponse(new RequestChannel.Response(request, new ResponseSend(request.connectionId, responseHeader, responseBody)))
     } else {
-      val partition = coordinator.partitionFor(groupCoordinatorRequest.groupId)
+      val partition = coordinator.partitionFor(groupCoordinatorRequest.groupId)//获取这个group在offset topic上的分区
 
-      // get metadata (and create the topic if necessary)
+      // get metadata (and create the topic if necessary)，类型是一个MetadataResponse.TopicMetadata，是offset topic这个内部topic的元数据信息
       val offsetsTopicMetadata = getOrCreateGroupMetadataTopic(request.securityProtocol)
 
-      val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) {
+      //构造response信息
+      val responseBody = if (offsetsTopicMetadata.error != Errors.NONE) { //创建或者获取offset topic 以及获取partition的元数据的过程中发生错误
         new GroupCoordinatorResponse(Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code, Node.noNode)
-      } else {
-        val coordinatorEndpoint = offsetsTopicMetadata.partitionMetadata().asScala
-          .find(_.partition == partition)
-          .map(_.leader())
+      } else {//没有错误
+        val coordinatorEndpoint = offsetsTopicMetadata.partitionMetadata().asScala//
+          .find(_.partition == partition) //找到group所在的partition信息，注意find和filter的区别，find是找到第一个，filter是找到满足条件的所有
+          .map(_.leader())//找到这个partition的leader
 
         coordinatorEndpoint match {
           case Some(endpoint) if !endpoint.isEmpty =>

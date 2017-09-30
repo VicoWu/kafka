@@ -77,6 +77,7 @@ class KafkaRequestHandlerPool(val brokerId: Int,
 
   this.logIdent = "[Kafka Request Handler on Broker " + brokerId + "], "
   val threads = new Array[Thread](numThreads)
+  //初始化由KafkaRequestHandler线程构成线程数组
   val runnables = new Array[KafkaRequestHandler](numThreads)
   for(i <- 0 until numThreads) {
     runnables(i) = new KafkaRequestHandler(i, brokerId, aggregateIdleMeter, numThreads, requestChannel, apis)

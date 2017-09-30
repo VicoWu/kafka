@@ -142,7 +142,7 @@ public class SubscriptionState {
             this.needsPartitionAssignment = true;
 
             // Remove any assigned partitions which are no longer subscribed to
-            //对于assignment中的tp，必须保证所有tp的topic都在subscription中
+            //可能存在某些topic离开了这个group，此时需要将其从assignment中移除
             for (Iterator<TopicPartition> it = assignment.keySet().iterator(); it.hasNext(); ) {
                 TopicPartition tp = it.next();
                 if (!subscription.contains(tp.topic()))

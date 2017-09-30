@@ -114,7 +114,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
         this.autoCommitEnabled = autoCommitEnabled;
         this.assignors = assignors;
 
-        addMetadataListener();
+        addMetadataListener();//创建metadata监听器
 
         if (autoCommitEnabled) {
             this.autoCommitTask = new AutoCommitTask(autoCommitIntervalMs);
@@ -166,7 +166,7 @@ public final class ConsumerCoordinator extends AbstractCoordinator {
                         if (filterTopic(topic))
                             topicsToSubscribe.add(topic);
 
-                    subscriptions.changeSubscription(topicsToSubscribe);
+                    subscriptions.changeSubscription(topicsToSubscribe);//这些topic 的metadata发生变化
                     metadata.setTopics(subscriptions.groupSubscription());
                 } else if (!cluster.unauthorizedTopics().isEmpty()) {
                     throw new TopicAuthorizationException(new HashSet<>(cluster.unauthorizedTopics()));

@@ -114,7 +114,7 @@ class ReplicaManager(val config: KafkaConfig,
   private val localBrokerId = config.brokerId
   private val allPartitions = new Pool[(String, Int), Partition](valueFactory = Some { case (t, p) =>
     new Partition(t, p, time, this)
-  })
+  }) //allPartitions这个Poll对象的key是(String, Int)，value是Partition对象
   private val replicaStateChangeLock = new Object
   val replicaFetcherManager = new ReplicaFetcherManager(config, this, metrics, jTime, threadNamePrefix)
   private val highWatermarkCheckPointThreadStarted = new AtomicBoolean(false)
@@ -277,12 +277,21 @@ class ReplicaManager(val config: KafkaConfig,
     allPartitions.getAndMaybePut((topic, partitionId))
   }
 
+  /**
+    *
+    * @param topic topic的名字
+    * @param partitionId //这个topic的partitionId
+    * @return 一个Partition对象
+    */
   def getPartition(topic: String, partitionId: Int): Option[Partition] = {
-    val partition = allPartitions.get((topic, partitionId))
+    //allPartitions的key是(String, Int)，value是Partition对象
+    val partition:Partition = allPartitions.get((topic, partitionId))//返回一个Partition对象
     if (partition == null)
       None
-    else
+    else{
       Some(partition)
+    }
+
   }
 
   def getReplicaOrException(topic: String, partition: Int): Replica = {

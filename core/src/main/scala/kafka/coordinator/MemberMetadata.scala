@@ -58,13 +58,13 @@ private[coordinator] class MemberMetadata(val memberId: String,
                                           val sessionTimeoutMs: Int,
                                           var supportedProtocols: List[(String, Array[Byte])]) {
 
-  var assignment: Array[Byte] = Array.empty[Byte]
+  var assignment: Array[Byte] = Array.empty[Byte]//分配给当前member的分区信息
   var awaitingJoinCallback: JoinGroupResult => Unit = null
   var awaitingSyncCallback: (Array[Byte], Short) => Unit = null
-  var latestHeartbeat: Long = -1
-  var isLeaving: Boolean = false
-
-  def protocols = supportedProtocols.map(_._1).toSet
+  var latestHeartbeat: Long = -1 //最后一次收到heartbeat的时间
+  var isLeaving: Boolean = false//消费者是否已经离开了对应的group
+  //supportedProtocols对应了消费址支持的PartitionAssignor
+  def protocols = supportedProtocols.map(_._1).toSet//记录了支持的PartitionAssignor的集合
 
   /**
    * Get metadata corresponding to the provided protocol.
@@ -107,7 +107,7 @@ private[coordinator] class MemberMetadata(val memberId: String,
    */
   def vote(candidates: Set[String]): String = {
     supportedProtocols.find({ case (protocol, _) => candidates.contains(protocol)}) match {
-      case Some((protocol, _)) => protocol
+      case Some((protocol, _)) => protocol//candidates中包含这个protocol
       case None =>
         throw new IllegalArgumentException("Member does not support any of the candidate protocols")
     }
