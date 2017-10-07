@@ -23,6 +23,7 @@ import collection.mutable
 import collection.JavaConversions
 import kafka.common.KafkaException
 
+//泛型类，构造的时候传输K,V类型，并且传入一个valueFactory对象，参考ReplicaManager
 class Pool[K,V](valueFactory: Option[(K) => V] = None) extends Iterable[(K, V)] {
 
   private val pool: ConcurrentMap[K, V] = new ConcurrentHashMap[K, V]
@@ -56,7 +57,7 @@ class Pool[K,V](valueFactory: Option[(K) => V] = None) extends Iterable[(K, V)] 
       createLock synchronized {
         val curr = pool.get(key)
         if (curr == null)
-          pool.put(key, valueFactory.get(key))
+          pool.put(key, valueFactory.get(key))//如果没有找到这个key,则调用valueFactory.get，实际上，是执行了valueFactory这个function
         pool.get(key)
       }
     }

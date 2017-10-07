@@ -187,7 +187,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // operation is unnecessarily added for watch. However, this is a less severe issue since the
     // expire reaper will clean it up periodically.
 
-    var isCompletedByMe = operation synchronized operation.tryComplete()
+    var isCompletedByMe = operation synchronized operation.tryComplete() //调用这个方法的tryComplete
     if (isCompletedByMe)
       return true
 
@@ -229,7 +229,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
   def checkAndComplete(key: Any): Int = {
     val watchers = inReadLock(removeWatchersLock) { watchersForKey.get(key) }
     if(watchers == null)
-      0
+      0 //没有需要完成的操作
     else
       watchers.tryCompleteWatched()
   }
@@ -309,10 +309,10 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
         val iter = operations.iterator()
         while (iter.hasNext) {
           val curr = iter.next()
-          if (curr.isCompleted) {
+          if (curr.isCompleted) { //已经完成
             // another thread has completed this operation, just remove it
             iter.remove()
-          } else if (curr synchronized curr.tryComplete()) {
+          } else if (curr synchronized curr.tryComplete()) { //调用tryComplete()方法，尝试进行完成
             completed += 1
             iter.remove()
           }

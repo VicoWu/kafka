@@ -37,6 +37,7 @@ import com.yammer.metrics.core.Gauge
 
 /**
  *  Abstract class for fetching data from multiple partitions from the same broker.
+ * 一个AbstractFetcherThread的实现类对象负责从某个broker的多个partition上拷贝数据
  */
 abstract class AbstractFetcherThread(name: String,
                                      clientId: String,
@@ -208,6 +209,7 @@ abstract class AbstractFetcherThread(name: String,
       partitionMapCond.signalAll()
     } finally partitionMapLock.unlock()
   }
+
 
   def removePartitions(topicAndPartitions: Set[TopicAndPartition]) {
     partitionMapLock.lockInterruptibly()

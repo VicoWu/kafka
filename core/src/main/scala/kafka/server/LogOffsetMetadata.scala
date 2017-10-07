@@ -24,6 +24,7 @@ object LogOffsetMetadata {
   val UnknownSegBaseOffset = -1L
   val UnknownFilePosition = -1
 
+  //LogOffsetMetadata的比较器，比如，在某个TP的replica的LEO发生改变，需要更新HW,此时需要通过这个比较器选出所有replica的最小的HW,用来更新当前的HW
   class OffsetOrdering extends Ordering[LogOffsetMetadata] {
     override def compare(x: LogOffsetMetadata , y: LogOffsetMetadata ): Int = {
       x.offsetDiff(y).toInt
@@ -47,6 +48,7 @@ case class LogOffsetMetadata(messageOffset: Long,
     if (messageOffsetOnly())
       throw new KafkaException(s"$this cannot compare its segment info with $that since it only has message offset info")
 
+    //判断是否当前的segment小雨that的segment
     this.segmentBaseOffset < that.segmentBaseOffset
   }
 

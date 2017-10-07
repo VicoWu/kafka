@@ -53,6 +53,7 @@ class NetworkClientBlockingOps(val client: NetworkClient) extends AnyVal {
    *
    * This method is useful for implementing blocking behaviour on top of the non-blocking `NetworkClient`, use it with
    * care.
+    *在这里，如果链接还没建立，则尝试建立链接
    */
   def blockingReady(node: Node, timeout: Long)(implicit time: JTime): Boolean = {
     require(timeout >=0, "timeout should be >= 0")

@@ -46,6 +46,9 @@ case class JoinGroupResult(members: Map[String, Array[Byte]],
  *
  * Each Kafka server instantiates a coordinator which is responsible for a set of
  * groups. Groups are assigned to coordinators based on their group names.
+  *
+  *每一个GroupCoordinator会负责管理offset topic的某一个topic partition，由于每个partition对应了一些ConsumerGroup， 因此，
+  * 这个GroupCoordinator就负责管理这些ConsumerGroup
  */
 class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoordinator对象，负责管理全部ConsumerGroup的一个子集
                        val groupConfig: GroupConfig,
@@ -59,7 +62,7 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
 
   this.logIdent = "[GroupCoordinator " + brokerId + "]: "
 
-  private val isActive = new AtomicBoolean(false)
+  private val isActive = new AtomicBoolean(false) //是否已经启动的标记
 
   def offsetsTopicConfigs: Properties = {
     val props = new Properties
@@ -76,10 +79,11 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
 
   /**
    * Startup logic executed at the same time when the server starts up.
+    * 在KafkaServer.startup()中被调用
    */
   def startup() {
     info("Starting up.")
-    isActive.set(true)
+    isActive.set(true)  //启动的时候，将isActive置为true
     info("Startup complete.")
   }
 
@@ -230,7 +234,7 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
                       responseCallback: SyncCallback) {
     if (!isActive.get) {
       responseCallback(Array.empty, Errors.GROUP_COORDINATOR_NOT_AVAILABLE.code)
-    } else if (!isCoordinatorForGroup(groupId)) {
+    } else if (!isCoordinatorForGroup(groupId)) { //当前这个Coordinator 是不是负责管理这个Group的Coordinator
       responseCallback(Array.empty, Errors.NOT_COORDINATOR_FOR_GROUP.code)
     } else {
       val group = groupManager.getGroup(groupId)
@@ -241,6 +245,14 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     }
   }
 
+  /**
+    * group的元信息同步，同步到offset topic 中去，比如,leader consumer将分区分配结果发送给GroupCoordinatoe
+    * @param group
+    * @param generationId
+    * @param memberId
+    * @param groupAssignment
+    * @param responseCallback
+    */
   private def doSyncGroup(group: GroupMetadata,
                           generationId: Int,
                           memberId: String,
@@ -255,26 +267,29 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
         responseCallback(Array.empty, Errors.ILLEGAL_GENERATION.code)
       } else {
         group.currentState match {
-          case Dead =>
+          case Dead => //Dead状态下，不接受SynchGroup请求
             responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
 
-          case PreparingRebalance =>
+          case PreparingRebalance => //在REBALANCE_IN_PROGRESS状态下，不接受SynchGroup请求
             responseCallback(Array.empty, Errors.REBALANCE_IN_PROGRESS.code)
 
-          case AwaitingSync =>
+          case AwaitingSync => //正确的状态，接受SynchGroup请求
             group.get(memberId).awaitingSyncCallback = responseCallback
             completeAndScheduleNextHeartbeatExpiration(group, group.get(memberId))
 
             // if this is the leader, then we can attempt to persist state and transition to stable
-            if (memberId == group.leaderId) {
+            if (memberId == group.leaderId) { //如果这个请求的确是group leader发过来的
               info(s"Assignment received from leader for group ${group.groupId} for generation ${group.generationId}")
 
               // fill any missing members with an empty assignment
-              val missing = group.allMembers -- groupAssignment.keySet
-              val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap
+              //group.allMembers存放了GroupCoordinator中group内的所有成员，groupAssignment.keySet存放了请求中携带的请求信息
+              //missing代表了存在于group.allMembers但是不存在于groupAssignment.keySet中的成员
+              val missing = group.allMembers -- groupAssignment.keySet //请求中的成员信息减去
+              val assignment = groupAssignment ++ missing.map(_ -> Array.empty[Byte]).toMap //获得本地和远程的成员的并集
 
+              //delayedGroupStore是一个Some，Some中包含的是prepareStoreGroup返回的DelayedStore
               delayedGroupStore = Some(groupManager.prepareStoreGroup(group, assignment, (errorCode: Short) => {
-                group synchronized {
+                group synchronized { //对当前的group加锁
                   // another member may have joined the group while we were awaiting this callback,
                   // so we must ensure we are still in the AwaitingSync state and the same generation
                   // when it gets invoked. if we have transitioned to another state, then do nothing
@@ -302,7 +317,7 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
 
     // store the group metadata without holding the group lock to avoid the potential
     // for deadlock when the callback is invoked
-    delayedGroupStore.foreach(groupManager.store)
+    delayedGroupStore.foreach(groupManager.store) //对于delayedGroupStore,调用groupManager.store进行存放
   }
 
   def handleLeaveGroup(groupId: String, consumerId: String, responseCallback: Short => Unit) {
@@ -507,10 +522,20 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     }
   }
 
+
+  /**
+    * 如果这个broker成为了offsetTopicPartitionId这个partition新的 副本的时候，需要调用这个方法，
+    * 用来将这个partitiion所负责的所有的ConsumerGroup的信息load进来，纳入自己的管理
+    * @param offsetTopicPartitionId
+    */
   def handleGroupImmigration(offsetTopicPartitionId: Int) {
     groupManager.loadGroupsForPartition(offsetTopicPartitionId, onGroupLoaded)
   }
 
+  /**
+    * 如果当前机器不再是offset topic的partition的leader，则需要调用这个方法，将其对应的Group从本机的GroupCoordinator中移除
+    * @param offsetTopicPartitionId
+    */
   def handleGroupEmigration(offsetTopicPartitionId: Int) {
     groupManager.removeGroupsForPartition(offsetTopicPartitionId, onGroupUnloaded)
   }

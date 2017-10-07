@@ -49,8 +49,10 @@ case class ProduceMetadata(produceRequiredAcks: Short,
 /**
  * A delayed produce operation that can be created by the replica manager and watched
  * in the produce operation purgatory
+  *可以看ReplicaManager.appendMessages()对其尽心构造的过程
+  *
  */
-class DelayedProduce(delayMs: Long,
+class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中produce相关元数据信息，则delayMs是config.offsetCommitTimeoutMs.toLong
                      produceMetadata: ProduceMetadata,
                      replicaManager: ReplicaManager,
                      responseCallback: Map[TopicPartition, PartitionResponse] => Unit)
@@ -70,6 +72,8 @@ class DelayedProduce(delayMs: Long,
   }
 
   /**
+    *
+    * 实现了DelayedOperation的tryComplete()方法
    * The delayed produce operation can be completed if every partition
    * it produces to is satisfied by one of the following:
    *

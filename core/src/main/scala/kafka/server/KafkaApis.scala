@@ -77,7 +77,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.FETCH => handleFetchRequest(request)
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
-        case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
+        case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request) //一般由controller发送，查看ControllerChannelManager.sendRequestsToBrokers
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
@@ -87,7 +87,7 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
         case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
-        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request)
+        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request) //Leader消费者通过这个请求将分区分配结果发送给GroupCoordinator
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
@@ -116,6 +116,10 @@ class KafkaApis(val requestChannel: RequestChannel,
       request.apiLocalCompleteTimeMs = SystemTime.milliseconds
   }
 
+  /**
+    * 一般由controller发送，查看ControllerChannelManager.sendRequestsToBrokers
+    * @param request
+    */
   def handleLeaderAndIsrRequest(request: RequestChannel.Request) {
     // ensureTopicExists is only for client facing requests
     // We can't have the ensureTopicExists check here since the controller sends it as an advisory to all brokers so they
@@ -124,21 +128,27 @@ class KafkaApis(val requestChannel: RequestChannel,
     val leaderAndIsrRequest = request.body.asInstanceOf[LeaderAndIsrRequest]
 
     try {
+      //如果某台broker宕机，那么leader落在这台机器上的offset topic的所有partition都需要迁移，这台服务器的GroupCoordinator需要迁移
+      /**
+        * updatedLeaders存放了那些在之前不是leader但是现在成为了leader的那些partition
+        * updatedFollowers存放了那些现在成为了这些partition的follower并且leader已经发生了变化的Partitiion
+        * 这个方法只针对offset topic的分区的leader/follower情况发生变化时进行处理，其它普通分区不需要这个回调方法
+        */
       def onLeadershipChange(updatedLeaders: Iterable[Partition], updatedFollowers: Iterable[Partition]) {
         // for each new leader or follower, call coordinator to handle consumer group migration.
         // this callback is invoked under the replica state change lock to ensure proper order of
         // leadership changes
-        updatedLeaders.foreach { partition =>
-          if (partition.topic == TopicConstants.GROUP_METADATA_TOPIC_NAME)
+        updatedLeaders.foreach { partition => //
+          if (partition.topic == TopicConstants.GROUP_METADATA_TOPIC_NAME) //必须是__consumer_offsets这个内部的topic
             coordinator.handleGroupImmigration(partition.partitionId)
         }
-        updatedFollowers.foreach { partition =>
+        updatedFollowers.foreach { partition => //对于每一个follower
           if (partition.topic == TopicConstants.GROUP_METADATA_TOPIC_NAME)
             coordinator.handleGroupEmigration(partition.partitionId)
         }
       }
 
-      val responseHeader = new ResponseHeader(correlationId)
+      val responseHeader = new ResponseHeader(correlationId) //correlationId是请求者的身份Id
       val leaderAndIsrResponse =
         if (authorize(request.session, ClusterAction, Resource.ClusterResource)) {
           val result = replicaManager.becomeLeaderOrFollower(correlationId, leaderAndIsrRequest, metadataCache, onLeadershipChange)
@@ -946,11 +956,11 @@ class KafkaApis(val requestChannel: RequestChannel,
       sendResponseCallback(Array[Byte](), Errors.GROUP_AUTHORIZATION_FAILED.code)
     } else {
       coordinator.handleSyncGroup(
-        syncGroupRequest.groupId(),
-        syncGroupRequest.generationId(),
-        syncGroupRequest.memberId(),
+        syncGroupRequest.groupId(), //GroupId信息
+        syncGroupRequest.generationId(), //年代信息
+        syncGroupRequest.memberId(), //成员Id
         syncGroupRequest.groupAssignment().mapValues(Utils.toArray(_)),
-        sendResponseCallback
+        sendResponseCallback //回调方法
       )
     }
   }
