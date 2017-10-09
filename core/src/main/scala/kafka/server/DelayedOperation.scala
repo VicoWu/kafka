@@ -187,7 +187,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // operation is unnecessarily added for watch. However, this is a less severe issue since the
     // expire reaper will clean it up periodically.
 
-    var isCompletedByMe = operation synchronized operation.tryComplete() //调用这个方法的tryComplete，查看DelayedProduce或者DelayedFetch对该方法的实现
+    var isCompletedByMe = operation synchronized operation.tryComplete() //调用这个方法的tryComplete，查看DelayedProduce/DelayedFetch/DelayedJoin对该方法的实现
     if (isCompletedByMe)
       return true
 

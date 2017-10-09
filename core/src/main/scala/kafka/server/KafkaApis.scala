@@ -77,7 +77,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.FETCH => handleFetchRequest(request)
         case ApiKeys.LIST_OFFSETS => handleOffsetRequest(request)
         case ApiKeys.METADATA => handleTopicMetadataRequest(request)
-        case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request) //一般由controller发送，查看ControllerChannelManager.sendRequestsToBrokers
+        //一般由controller发送，查看ControllerChannelManager.sendRequestsToBrokers，查看P305副本角色切换和P419,这个服务的调用一般发生在broker宕机、
+          //或者某个TP的副本角色发生切换，比如由follower切换到了leader时候会调用
+        case ApiKeys.LEADER_AND_ISR => handleLeaderAndIsrRequest(request)
         case ApiKeys.STOP_REPLICA => handleStopReplicaRequest(request)
         case ApiKeys.UPDATE_METADATA_KEY => handleUpdateMetadataRequest(request)
         case ApiKeys.CONTROLLED_SHUTDOWN_KEY => handleControlledShutdownRequest(request)
@@ -85,9 +87,9 @@ class KafkaApis(val requestChannel: RequestChannel,
         case ApiKeys.OFFSET_FETCH => handleOffsetFetchRequest(request)
         case ApiKeys.GROUP_COORDINATOR => handleGroupCoordinatorRequest(request) //客户端调用AbstractCoordinator.sendGroupCoordinatorRequest(),用来查询当前某个group的GroupCoordinator在哪儿
         case ApiKeys.JOIN_GROUP => handleJoinGroupRequest(request)
-        case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request)
+        case ApiKeys.HEARTBEAT => handleHeartbeatRequest(request) //Consumer不断通过heartbeat向GroupCoordinator发送心跳信息
         case ApiKeys.LEAVE_GROUP => handleLeaveGroupRequest(request)
-        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request) //Leader消费者通过这个请求将分区分配结果发送给GroupCoordinator
+        case ApiKeys.SYNC_GROUP => handleSyncGroupRequest(request) //Leader消费者通过这个请求将分区分配结果发送给GroupCoordinator，查看P450，这个请求发生在选举完成以后，由leader和follower发送给对应的GroupCoordinator
         case ApiKeys.DESCRIBE_GROUPS => handleDescribeGroupRequest(request)
         case ApiKeys.LIST_GROUPS => handleListGroupsRequest(request)
         case ApiKeys.SASL_HANDSHAKE => handleSaslHandshakeRequest(request)
@@ -118,6 +120,8 @@ class KafkaApis(val requestChannel: RequestChannel,
 
   /**
     * 一般由controller发送，查看ControllerChannelManager.sendRequestsToBrokers
+    * 关于这个方法，查看教材P306 和 P419
+    *
     * @param request
     */
   def handleLeaderAndIsrRequest(request: RequestChannel.Request) {

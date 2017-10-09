@@ -261,9 +261,9 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     var delayedGroupStore: Option[DelayedStore] = None
 
     group synchronized {
-      if (!group.has(memberId)) {
+      if (!group.has(memberId)) { //group中是否有这个成员
         responseCallback(Array.empty, Errors.UNKNOWN_MEMBER_ID.code)
-      } else if (generationId != group.generationId) {
+      } else if (generationId != group.generationId) {//genertion信息是否匹配
         responseCallback(Array.empty, Errors.ILLEGAL_GENERATION.code)
       } else {
         group.currentState match {
@@ -626,6 +626,10 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     maybePrepareRebalance(group)
   }
 
+  /**
+    * 只有在stable和AwaitingSync状态下才可以发生rebalance
+    * @param group
+    */
   private def maybePrepareRebalance(group: GroupMetadata) {
     group synchronized {
       if (group.canRebalance)
@@ -638,25 +642,36 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     if (group.is(AwaitingSync))
       resetAndPropagateAssignmentError(group, Errors.REBALANCE_IN_PROGRESS.code)
 
-    group.transitionTo(PreparingRebalance)
+    group.transitionTo(PreparingRebalance)//状态切换
     info("Preparing to restabilize group %s with old generation %s".format(group.groupId, group.generationId))
 
-    val rebalanceTimeout = group.rebalanceTimeout
+    val rebalanceTimeout = group.rebalanceTimeout //是所有成员最长的sessiionTimeout的值
     val delayedRebalance = new DelayedJoin(this, group, rebalanceTimeout)
     val groupKey = GroupKey(group.groupId)
     joinPurgatory.tryCompleteElseWatch(delayedRebalance, Seq(groupKey))
   }
 
+  /**
+    * 如果group中有某一个成员发生故障，将会调用这个方法
+    * @param group
+    * @param member
+    */
   private def onMemberFailure(group: GroupMetadata, member: MemberMetadata) {
     trace("Member %s in group %s has failed".format(member.memberId, group.groupId))
-    group.remove(member.memberId)
+    group.remove(member.memberId)  //删除成员并重新选举leader
     group.currentState match {
       case Dead =>
       case Stable | AwaitingSync => maybePrepareRebalance(group)
-      case PreparingRebalance => joinPurgatory.checkAndComplete(GroupKey(group.groupId))
+      case PreparingRebalance => joinPurgatory.checkAndComplete(GroupKey(group.groupId)) //如果当前正处于PreparingRebalance,那么就无需再进行rebalanace，只需要检查当前的rebalance是否完成
     }
   }
 
+  /**
+    * 进行join group的操作，查看DelayedJoin.tryComplete()方法
+    * @param group
+    * @param forceComplete
+    * @return
+    */
   def tryCompleteJoin(group: GroupMetadata, forceComplete: () => Boolean) = {
     group synchronized {
       if (group.notYetRejoinedMembers.isEmpty)
@@ -669,6 +684,11 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     // TODO: add metrics for restabilize timeouts
   }
 
+
+  /**
+    * join group或者发生rebalance的服务端的实际调用
+    * @param group
+    */
   def onCompleteJoin(group: GroupMetadata) {
     group synchronized {
       val failedMembers = group.notYetRejoinedMembers
@@ -685,14 +705,16 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
           info("Group %s generation %s is dead and removed".format(group.groupId, group.generationId))
         }
       }
-      if (!group.is(Dead)) {
-        group.initNextGeneration()
+
+      if (!group.is(Dead)) { //这个group依然正常
+        group.initNextGeneration() //开始一个新的generation
         info("Stabilized group %s generation %s".format(group.groupId, group.generationId))
 
         // trigger the awaiting join group response callback for all the members after rebalancing
         for (member <- group.allMemberMetadata) {
           assert(member.awaitingJoinCallback != null)
-          val joinResult = JoinGroupResult(
+          val joinResult = JoinGroupResult( //构造JoinGroupResult对象
+            //如果当前的这个member是leader，则返回当前group中所有成员的元数据信息，否则，返回空，因为follower是无权知道group中其它成员的信息的
             members=if (member.memberId == group.leaderId) { group.currentMemberMetadata } else { Map.empty },
             memberId=member.memberId,
             generationId=group.generationId,
@@ -708,6 +730,14 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     }
   }
 
+  /**
+    * 对heartbeat完成对处理
+    * @param group
+    * @param member
+    * @param heartbeatDeadline
+    * @param forceComplete
+    * @return
+    */
   def tryCompleteHeartbeat(group: GroupMetadata, member: MemberMetadata, heartbeatDeadline: Long, forceComplete: () => Boolean) = {
     group synchronized {
       if (shouldKeepMemberAlive(member, heartbeatDeadline) || member.isLeaving)
@@ -716,6 +746,12 @@ class GroupCoordinator(val brokerId: Int,//每一个broker都有一个GroupCoord
     }
   }
 
+  /**
+    * heartbeat过期的处理
+    * @param group
+    * @param member
+    * @param heartbeatDeadline
+    */
   def onExpireHeartbeat(group: GroupMetadata, member: MemberMetadata, heartbeatDeadline: Long) {
     group synchronized {
       if (!shouldKeepMemberAlive(member, heartbeatDeadline))

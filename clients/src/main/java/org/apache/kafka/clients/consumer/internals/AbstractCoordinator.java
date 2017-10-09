@@ -426,6 +426,11 @@ public abstract class AbstractCoordinator implements Closeable {
         }
     }
 
+    /**
+     * 无论是follower还是leader，都会发送syncgroup到GroupCoordinator
+     * @param request
+     * @return
+     */
     private RequestFuture<ByteBuffer> sendSyncGroupRequest(SyncGroupRequest request) {
         if (coordinatorUnknown())
             return RequestFuture.coordinatorNotAvailable();

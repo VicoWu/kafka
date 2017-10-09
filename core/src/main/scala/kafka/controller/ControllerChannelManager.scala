@@ -275,6 +275,15 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
     updateMetadataRequestMap.clear()
   }
 
+  /**
+    * 向leaderAndIsrRequestMap中添加请求，这些请求将在sendRequestsToBrokers中发送给broker
+    * @param brokerIds
+    * @param topic
+    * @param partition
+    * @param leaderIsrAndControllerEpoch
+    * @param replicas
+    * @param callback
+    */
   def addLeaderAndIsrRequestForBrokers(brokerIds: Seq[Int], topic: String, partition: Int,
                                        leaderIsrAndControllerEpoch: LeaderIsrAndControllerEpoch,
                                        replicas: Seq[Int], callback: AbstractRequestResponse => Unit = null) {
@@ -282,7 +291,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
 
     brokerIds.filter(_ >= 0).foreach { brokerId =>
       val result = leaderAndIsrRequestMap.getOrElseUpdate(brokerId, mutable.Map.empty)
-      result.put(topicPartition, PartitionStateInfo(leaderIsrAndControllerEpoch, replicas.toSet))
+      result.put(topicPartition, PartitionStateInfo(leaderIsrAndControllerEpoch, replicas.toSet)) //向map中添加数据
     }
 
     addUpdateMetadataRequestForBrokers(controllerContext.liveOrShuttingDownBrokerIds.toSeq,
@@ -369,6 +378,7 @@ class ControllerBrokerRequestBatch(controller: KafkaController) extends  Logging
           )
           topicPartition -> partitionState
         }
+        //发送LeaderAndIsrRequest到远程到服务器
         val leaderAndIsrRequest = new LeaderAndIsrRequest(controllerId, controllerEpoch, partitionStates.asJava, leaders.asJava)
         controller.sendRequest(broker, ApiKeys.LEADER_AND_ISR, None, leaderAndIsrRequest, null)
       }

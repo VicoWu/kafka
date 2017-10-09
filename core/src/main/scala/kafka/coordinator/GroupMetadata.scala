@@ -43,7 +43,10 @@ private[coordinator] case object PreparingRebalance extends GroupState { val sta
 
 /**
  * Group is awaiting state assignment from the leader
- *
+ * 当一个follower发送了syncGroup操作的时候，会调用GroupMetadata.initNextGeneration()方法，使得这个Group的状态切换到AwaitingSync，
+  * 这个状态表示当前的GroupCoordinator正在等待leader向自己发送SyncGroup操作以获取当前group的分区分配结果，因为
+  * 分区分配是leader consumer负责的。
+  *
  * action: respond to heartbeats with REBALANCE_IN_PROGRESS
  *         respond to offset commits with REBALANCE_IN_PROGRESS
  *         park sync group requests from followers until transition to Stable
@@ -206,6 +209,9 @@ private[coordinator] class GroupMetadata(val groupId: String, val protocolType: 
     isEmpty || (memberProtocols & candidateProtocols).nonEmpty
   }
 
+  /**
+    * 将generation值加1，然后切换到AwaitingSync状态
+    */
   def initNextGeneration() = {
     assert(notYetRejoinedMembers == List.empty[MemberMetadata])
     generationId += 1

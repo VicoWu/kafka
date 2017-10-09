@@ -202,9 +202,9 @@ class PartitionStateMachine(controller: KafkaController) extends Logging {
               // initialize leader and isr path for new partition
               initializeLeaderAndIsrForPartition(topicAndPartition)
             case OfflinePartition =>
-              electLeaderForPartition(topic, partition, leaderSelector)
+              electLeaderForPartition(topic, partition, leaderSelector) //当leader从offline到oneline
             case OnlinePartition => // invoked when the leader needs to be re-elected
-              electLeaderForPartition(topic, partition, leaderSelector)
+              electLeaderForPartition(topic, partition, leaderSelector) //当leader需要重新选举
             case _ => // should never come here since illegal previous states are checked above
           }
           partitionState.put(topicAndPartition, OnlinePartition)
