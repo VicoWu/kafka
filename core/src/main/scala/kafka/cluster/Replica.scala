@@ -95,7 +95,7 @@ class Replica(val brokerId: Int,
     }
   }
 
-  def highWatermark = highWatermarkMetadata
+  def highWatermark = highWatermarkMetadata //HW值，往往是所有的ISR中最小的offset值
 
   def convertHWToLocalOffsetMetadata() = {
     if (isLocal) {

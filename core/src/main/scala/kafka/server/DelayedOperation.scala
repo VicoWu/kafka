@@ -187,14 +187,14 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
     // operation is unnecessarily added for watch. However, this is a less severe issue since the
     // expire reaper will clean it up periodically.
 
-    var isCompletedByMe = operation synchronized operation.tryComplete() //调用这个方法的tryComplete
+    var isCompletedByMe = operation synchronized operation.tryComplete() //调用这个方法的tryComplete，查看DelayedProduce或者DelayedFetch对该方法的实现
     if (isCompletedByMe)
       return true
 
     var watchCreated = false
     for(key <- watchKeys) {
       // If the operation is already completed, stop adding it to the rest of the watcher list.
-      if (operation.isCompleted())
+      if (operation.isCompleted()) //如果以及功能完成
         return false
       watchForOperation(key, operation)
 
@@ -259,7 +259,7 @@ class DelayedOperationPurgatory[T <: DelayedOperation](purgatoryName: String,
   private def watchForOperation(key: Any, operation: T) {
     inReadLock(removeWatchersLock) {
       val watcher = watchersForKey.getAndMaybePut(key)
-      watcher.watch(operation)
+      watcher.watch(operation) //将这个operation添加到这个watcher上
     }
   }
 

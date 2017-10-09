@@ -241,6 +241,7 @@ class GroupMetadataManager(val brokerId: Int,
 
   /**
     * 将消息存入指定的topic 中。DelayedStore中存放了对应的TopicPartion、消息体以及存入完毕以后的回调
+    * 这里主要用在用户提交offset 信息，或者发出SynchGroup请求
     * @param delayedAppend
     */
   def store(delayedAppend: DelayedStore) {

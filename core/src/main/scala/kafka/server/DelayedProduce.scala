@@ -49,8 +49,8 @@ case class ProduceMetadata(produceRequiredAcks: Short,
 /**
  * A delayed produce operation that can be created by the replica manager and watched
  * in the produce operation purgatory
-  *可以看ReplicaManager.appendMessages()对其尽心构造的过程
-  *
+  *可以看ReplicaManager.appendMessages()对其进行构造的过程
+  *构造DelayedProduce对象的时候，会将每一个没有发生错误的的TopicParitition 的acksPending置为true
  */
 class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中produce相关元数据信息，则delayMs是config.offsetCommitTimeoutMs.toLong
                      produceMetadata: ProduceMetadata,
@@ -59,6 +59,7 @@ class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中
   extends DelayedOperation(delayMs) {
 
   // first update the acks pending variable according to the error code
+  //根据error code更新acksPending变量
   produceMetadata.produceStatus.foreach { case (topicPartition, status) =>
     if (status.responseStatus.errorCode == Errors.NONE.code) {
       // Timeout error state will be cleared when required acks are received
@@ -74,6 +75,7 @@ class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中
   /**
     *
     * 实现了DelayedOperation的tryComplete()方法
+    * 返回值代表了是否已经被执行了。true代表已经被立刻执行了，false代表还需要延时执行
    * The delayed produce operation can be completed if every partition
    * it produces to is satisfied by one of the following:
    *
@@ -85,7 +87,7 @@ class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中
    */
   override def tryComplete(): Boolean = {
     // check for each partition if it still has pending acks
-    produceMetadata.produceStatus.foreach { case (topicAndPartition, status) =>
+    produceMetadata.produceStatus.foreach { case (topicAndPartition, status) =>  //对于每一个TopicPartition
       trace("Checking produce satisfaction for %s, current status %s"
         .format(topicAndPartition, status))
       // skip those partitions that have already been satisfied
@@ -95,14 +97,15 @@ class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中
           case Some(partition) =>
             partition.checkEnoughReplicasReachOffset(status.requiredOffset)
           case None =>
-            // Case A
+            // Case A   //这个broker已经不是leader了
             (false, Errors.UNKNOWN_TOPIC_OR_PARTITION.code)
         }
-        if (errorCode != Errors.NONE.code) {
+        //只有以下两种情况，这个DelayedProduce会被立即执行，否则，如果没有发生错误，并且hasEnough=false，无法被立即执行
+        if (errorCode != Errors.NONE.code) { //发生错误，会被立即执行
           // Case B.1
           status.acksPending = false
           status.responseStatus.errorCode = errorCode
-        } else if (hasEnough) {
+        } else if (hasEnough) { //没有发生错误，并且有足够的ISR，会被立即执行
           // Case B.2
           status.acksPending = false
           status.responseStatus.errorCode = Errors.NONE.code
@@ -111,10 +114,10 @@ class DelayedProduce(delayMs: Long, //延迟时间，比如，向offset topic中
     }
 
     // check if each partition has satisfied at lease one of case A and case B
-    if (! produceMetadata.produceStatus.values.exists(p => p.acksPending))
-      forceComplete()
+    if (! produceMetadata.produceStatus.values.exists(p => p.acksPending)) //如果不存在acksPending=true的metadata
+      forceComplete() //会被立刻执行
     else
-      false
+      false  //不满足立刻执行的条件，比如，errorCode=Errors.NONE.code，但是hasEnough=false，这时候还得延时执行
   }
 
   override def onExpiration() {

@@ -316,21 +316,25 @@ class Partition(val topic: String,
    * and we are waiting for all replicas in ISR to be fully caught up to
    * the (local) leader's offset corresponding to this produce request
    * before we acknowledge the produce request.
+   *
+   * 这个方法只有在ack=all的情况下被调用，检查是否所有的ISR都已经确认赶上了leader的offset
+   * 返回值(Boolean, Short)，第一个参数代表是否有足够的ISR以及功能确认收到了这一轮消息，第二个参数是返回的ERROR_CODE
    */
   def checkEnoughReplicasReachOffset(requiredOffset: Long): (Boolean, Short) = {
     leaderReplicaIfLocal() match {
-      case Some(leaderReplica) =>
+      case Some(leaderReplica) => //本机的这个 Replica是leader Replica
         // keep the current immutable replica list reference
         val curInSyncReplicas = inSyncReplicas
+        //numAcks记录了当前这个tp的isr中已经在offset上与leader取得同步的ISR的数量
         val numAcks = curInSyncReplicas.count(r => {
-          if (!r.isLocal)
-            if (r.logEndOffset.messageOffset >= requiredOffset) {
+          if (!r.isLocal) //如果不是本机的replica
+            if (r.logEndOffset.messageOffset >= requiredOffset) { //如果远程的replica不小于leader的offset，返回true
               trace("Replica %d of %s-%d received offset %d".format(r.brokerId, topic, partitionId, requiredOffset))
               true
             }
             else
-              false
-          else
+              false //远程的这个replica的offset还没有与leader取得同步，返回false
+          else //如果是本机，直接true
             true /* also count the local (leader) replica */
         })
 
@@ -338,20 +342,21 @@ class Partition(val topic: String,
 
         val minIsr = leaderReplica.log.get.config.minInSyncReplicas
 
+        //highWatermark大于requiredOffset，说明这个TopicPartitioin的HW以及功能大于requiredOffset，这必然是所有的replica已经收到了消息
         if (leaderReplica.highWatermark.messageOffset >= requiredOffset ) {
           /*
           * The topic may be configured not to accept messages if there are not enough replicas in ISR
           * in this scenario the request was already appended locally and then added to the purgatory before the ISR was shrunk
           */
-          if (minIsr <= curInSyncReplicas.size) {
-            (true, Errors.NONE.code)
-          } else {
+          if (minIsr <= curInSyncReplicas.size) { //如果当前的ISR大于或者minIsr
+            (true, Errors.NONE.code) //成功,并且没有发生任何错误
+          } else { //如果当前的ISR小于minIsr
             (true, Errors.NOT_ENOUGH_REPLICAS_AFTER_APPEND.code)
           }
         } else
           (false, Errors.NONE.code)
       case None =>
-        (false, Errors.NOT_LEADER_FOR_PARTITION.code)
+        (false, Errors.NOT_LEADER_FOR_PARTITION.code) //自己不是这个TP的leader  replica，返回错误
     }
   }
 

@@ -347,12 +347,13 @@ class ReplicaManager(val config: KafkaConfig,
                      messagesPerPartition: Map[TopicPartition, MessageSet],
                      responseCallback: Map[TopicPartition, PartitionResponse] => Unit) {
 
-    if (isValidRequiredAcks(requiredAcks)) {
+    if (isValidRequiredAcks(requiredAcks)) { //requiredAcsk不是-1,0,1
       val sTime = SystemTime.milliseconds
       //将消息追加到Log中，返回一个 Map[TopicPartition, LogAppendResult]，key是对应的TP,value是对这个TP进行Append的结果
       val localProduceResults = appendToLocalLog(internalTopicsAllowed, messagesPerPartition, requiredAcks)
       debug("Produce to local log in %d ms".format(SystemTime.milliseconds - sTime))
 
+      //produceStatus是一个Map[TopicParitition,ProducePartitionStatus]
       val produceStatus = localProduceResults.map { case (topicPartition, result) =>
         topicPartition ->
                 ProducePartitionStatus(
@@ -360,13 +361,14 @@ class ReplicaManager(val config: KafkaConfig,
                   new PartitionResponse(result.errorCode, result.info.firstOffset, result.info.timestamp)) // response status
       }
 
-      //如果requiredAcks=-1，并且messagesPerPartition>0,并且error的数量小于partition的数量，比如，如果只有一个partition,那error
+      //如果requiredAcks=-1(代表需要所有的replica全部确认成功写入)，并且messagesPerPartition>0,并且error的数量小于partition的数量，比如，如果只有一个partition,那error
       if (delayedRequestRequired(requiredAcks, messagesPerPartition, localProduceResults)) {
         // create delayed produce operation
         val produceMetadata = ProduceMetadata(requiredAcks, produceStatus)
         val delayedProduce = new DelayedProduce(timeout, produceMetadata, this, responseCallback) //生成一个DelayedProduce对象
 
         // create a list of (topic, partition) pairs to use as keys for this delayed produce operation
+        //producerRequestKeys是一个List[TopicPartitionOperationKey]
         val producerRequestKeys = messagesPerPartition.keys.map(new TopicPartitionOperationKey(_)).toSeq
 
         // try to complete the request immediately, otherwise put it into the purgatory
@@ -406,6 +408,13 @@ class ReplicaManager(val config: KafkaConfig,
     localProduceResults.values.count(_.error.isDefined) < messagesPerPartition.size
   }
 
+  /**
+    * requiredAcks=-1等同于requiredAck=all，必须等待所有的Replica已经确认写入才能返回
+    * requiredAcks=0,producer不会等待任何broker响应，写入即返回
+    * requiredAcks=1，producer只需要等待leader响应就可以返回了，如果在leader收到消息以后到follower将消息同步过来之前leader发生故障，则消息会丢失
+    * @param requiredAcks
+    * @return
+    */
   private def isValidRequiredAcks(requiredAcks: Short): Boolean = {
     requiredAcks == -1 || requiredAcks == 1 || requiredAcks == 0
   }
@@ -425,7 +434,7 @@ class ReplicaManager(val config: KafkaConfig,
       // reject appending to internal topics if it is not allowed
       if (Topic.isInternal(topicPartition.topic) && !internalTopicsAllowed) {
         (topicPartition, LogAppendResult(
-          LogAppendInfo.UnknownLogAppendInfo,
+          LogAppendInfo.UnknownLogAppendInfo, //不允许写入内部topic
           Some(new InvalidTopicException("Cannot append to internal topic %s".format(topicPartition.topic)))))
       } else {
         try {
@@ -460,7 +469,7 @@ class ReplicaManager(val config: KafkaConfig,
             Runtime.getRuntime.halt(1)
             (topicPartition, null)
           case e@ (_: UnknownTopicOrPartitionException |
-                   _: NotLeaderForPartitionException |
+                   _: NotLeaderForPartitionException | //当前管理的这个Replica并非这个TopicPartition的leader
                    _: RecordTooLargeException |
                    _: RecordBatchTooLargeException |
                    _: CorruptRecordException |
